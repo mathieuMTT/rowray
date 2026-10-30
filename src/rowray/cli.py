@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,14 +28,37 @@ class RowRayError(Exception):
 
 @contextmanager
 def progress(label: str):
-    print(f"→ {label}...", flush=True)
     started = time.monotonic()
+    animated = sys.stdout.isatty()
+    stop = threading.Event()
+
+    def spin() -> None:
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        index = 0
+        while not stop.is_set():
+            print(f"\r{frames[index % len(frames)]} {label} ({time.monotonic() - started:.0f}s)", end="", flush=True)
+            index += 1
+            stop.wait(0.25)
+
+    if animated:
+        thread = threading.Thread(target=spin, daemon=True)
+        thread.start()
+    else:
+        thread = None
+        print(f"→ {label}...", flush=True)
+    failed = False
     try:
         yield
     except BaseException:
-        print(f"✗ {label} ({time.monotonic() - started:.1f}s)", flush=True)
+        failed = True
         raise
-    print(f"✓ {label} ({time.monotonic() - started:.1f}s)", flush=True)
+    finally:
+        stop.set()
+        if thread:
+            thread.join()
+        prefix = "✗" if failed else "✓"
+        clear = "\r\033[2K" if animated else ""
+        print(f"{clear}{prefix} {label} ({time.monotonic() - started:.1f}s)", flush=True)
 
 
 def run(command: list[str], cwd: Path) -> str:
