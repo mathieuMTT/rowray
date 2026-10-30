@@ -13,6 +13,9 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 
 PRICE_PER_TIB = 6.25
+PROFILE_SCAN_LIMIT = 200 * 1024**3
+NUMERIC_TYPES = {"INTEGER", "INT64", "FLOAT", "FLOAT64", "NUMERIC", "BIGNUMERIC", "DECIMAL", "BIGDECIMAL"}
+SKIPPED_TYPES = {"RECORD", "STRUCT", "GEOGRAPHY", "JSON"}
 ENV_VAR = re.compile(r'''^\s*\{\{\s*env_var\(["']([^"']+)["'](?:,\s*["']([^"']*)["'])?\)\s*\}\}\s*$''')
 
 
@@ -92,7 +95,7 @@ def compiled_sql(target_path: Path, model: str) -> str:
     sql = matches[0].get("compiled_code") or matches[0].get("compiled_sql")
     if not sql:
         raise RowRayError(f"model {model!r} has no compiled SQL")
-    return sql
+    return sql.strip().removesuffix(";").strip()
 
 
 def compile_model(
@@ -161,11 +164,83 @@ def bigquery_client(output: dict) -> bigquery.Client:
     raise RowRayError(f"BigQuery authentication method {method!r} is not supported yet")
 
 
-def dry_run(client: bigquery.Client, sql: str) -> tuple[int, dict[str, tuple[str, str]]]:
+def dry_run(client: bigquery.Client, sql: str) -> tuple[int, list[tuple[str, str, str]]]:
     config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
     job = client.query(sql, job_config=config)
-    columns = {field.name: (field.field_type, field.mode or "NULLABLE") for field in (job.schema or [])}
+    columns = [(field.name, field.field_type, field.mode or "NULLABLE") for field in (job.schema or [])]
     return job.total_bytes_processed or 0, columns
+
+
+def schema_changes(
+    base: list[tuple[str, str]], head: list[tuple[str, str]]
+) -> tuple[list[str], list[str], list[str]]:
+    base_types = dict(base)
+    head_types = dict(head)
+    added = [name for name in head_types if name not in base_types]
+    removed = [name for name in base_types if name not in head_types]
+    changed = [
+        f"{name} {base_types[name]} → {head_types[name]}"
+        for name in head_types
+        if name in base_types and head_types[name] != base_types[name]
+    ]
+    return added, removed, changed
+
+
+def profile_columns(
+    base: list[tuple[str, str, str]], head: list[tuple[str, str, str]]
+) -> tuple[list[tuple[str, str]], list[str]]:
+    head_by_name = {name: (field_type, mode) for name, field_type, mode in head}
+    shared = [
+        (name, field_type, head_by_name[name][1])
+        for name, field_type, _mode in base
+        if name in head_by_name and head_by_name[name][0] == field_type
+    ]
+    kept = [(name, field_type) for name, field_type, mode in shared if mode != "REPEATED" and field_type not in SKIPPED_TYPES]
+    skipped = [name for name, field_type, mode in shared if mode == "REPEATED" or field_type in SKIPPED_TYPES]
+    return kept, skipped
+
+
+def identifier(name: str) -> str:
+    return f"`{name.replace('`', '')}`"
+
+
+def profile_sql(base_sql: str, head_sql: str, columns: list[tuple[str, str]]) -> str:
+    metrics = ["COUNT(*) AS n_rows"]
+    for name, field_type in columns:
+        column = identifier(name)
+        metrics.append(f"COUNTIF({column} IS NULL) AS {identifier(name + '__nulls')}")
+        metrics.append(f"APPROX_COUNT_DISTINCT({column}) AS {identifier(name + '__distincts')}")
+        if field_type in NUMERIC_TYPES:
+            metrics.append(f"SUM({column}) AS {identifier(name + '__sum')}")
+    body = ",\n    ".join(metrics)
+    return (
+        "WITH base AS (\n"
+        f"{base_sql}\n"
+        "), head AS (\n"
+        f"{head_sql}\n"
+        ")\n"
+        f"SELECT 'base' AS side, {body} FROM base\n"
+        "UNION ALL\n"
+        f"SELECT 'head' AS side, {body} FROM head"
+    )
+
+
+def percentage(part: float, total: float) -> str:
+    return "0%" if not total else f"{100 * part / total:.1f}%"
+
+
+def delta(old: float, new: float) -> str:
+    if old == 0:
+        return "0" if new == 0 else "new"
+    return f"{(new - old) / old:+.1%}"
+
+
+def column_moved(base: dict, head: dict, name: str, field_type: str) -> bool:
+    if percentage(base[name + "__nulls"], base["n_rows"]) != percentage(head[name + "__nulls"], head["n_rows"]):
+        return True
+    if int(base[name + "__distincts"]) != int(head[name + "__distincts"]):
+        return True
+    return field_type in NUMERIC_TYPES and base[name + "__sum"] != head[name + "__sum"]
 
 
 def format_bytes(value: int) -> str:
@@ -185,8 +260,12 @@ def format_delta(base: int, head: int) -> str:
 def report(
     base: int,
     head: int,
-    base_columns: dict[str, tuple[str, str]],
-    head_columns: dict[str, tuple[str, str]],
+    base_columns: list[tuple[str, str, str]],
+    head_columns: list[tuple[str, str, str]],
+    columns: list[tuple[str, str]],
+    skipped: list[str],
+    profile: dict[str, dict] | None,
+    profile_note: str,
 ) -> str:
     base_cost = base / 1024**4 * PRICE_PER_TIB
     head_cost = head / 1024**4 * PRICE_PER_TIB
@@ -195,19 +274,49 @@ def report(
         f"{'Scan':12}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
         f"{'Cost (USD)':12}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
         "",
-        "Columns",
     ]
-    added = sorted(head_columns.keys() - base_columns.keys())
-    removed = sorted(base_columns.keys() - head_columns.keys())
-    changed = sorted(name for name in base_columns.keys() & head_columns.keys() if base_columns[name] != head_columns[name])
-    if not (added or removed or changed):
-        lines.append("  no change")
-    lines.extend(f"  added: {name} ({' '.join(head_columns[name])})" for name in added)
-    lines.extend(f"  removed: {name} ({' '.join(base_columns[name])})" for name in removed)
-    lines.extend(
-        f"  changed: {name} ({' '.join(base_columns[name])} -> {' '.join(head_columns[name])})" for name in changed
+    added, removed, changed = schema_changes(
+        [(name, field_type) for name, field_type, _mode in base_columns],
+        [(name, field_type) for name, field_type, _mode in head_columns],
     )
-    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; dry runs execute no query.")
+    lines.extend(
+        [
+            f"added: {', '.join(added) or 'none'}",
+            f"removed: {', '.join(removed) or 'none'}",
+            f"type changes: {', '.join(changed) or 'none'}",
+        ]
+    )
+    if skipped:
+        lines.append(f"skipped columns: {', '.join(skipped)}")
+    lines.append("")
+    if profile is None:
+        lines.append(profile_note)
+    else:
+        base_row = profile["base"]
+        head_row = profile["head"]
+        if base_row["n_rows"] == 0 and head_row["n_rows"] == 0:
+            lines.append("rows: 0; no data to profile")
+            columns = []
+        elif base_row["n_rows"] == head_row["n_rows"]:
+            lines.append("rows: no change")
+        else:
+            lines.append(f"rows: {base_row['n_rows']} → {head_row['n_rows']} ({delta(base_row['n_rows'], head_row['n_rows'])})")
+        moved = [(name, field_type) for name, field_type in columns if column_moved(base_row, head_row, name, field_type)]
+        unchanged = [name for name, field_type in columns if not column_moved(base_row, head_row, name, field_type)]
+        if moved:
+            lines.extend(["", "changes", "", "| column | nulls | distincts | sum |", "| --- | --- | --- | --- |"]) 
+            for name, field_type in moved:
+                nulls = (
+                    f"{percentage(base_row[name + '__nulls'], base_row['n_rows'])} → "
+                    f"{percentage(head_row[name + '__nulls'], head_row['n_rows'])}"
+                )
+                distincts = f"{int(base_row[name + '__distincts'])} → {int(head_row[name + '__distincts'])}"
+                total = f"{base_row[name + '__sum']} → {head_row[name + '__sum']}" if field_type in NUMERIC_TYPES else ""
+                lines.append(f"| {name} | {nulls} | {distincts} | {total} |")
+        if unchanged:
+            lines.extend(["", "no change", "", "| column | distincts |", "| --- | --- |"]) 
+            lines.extend(f"| {name} | {int(head_row[name + '__distincts'])} |" for name in unchanged)
+    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; no model is built.")
     return "\n".join(lines)
 
 
@@ -219,6 +328,7 @@ def compare(
     dbt_vars: str | None,
     warn_error_options: str | None,
     full_refresh: bool,
+    execute: bool,
 ) -> str:
     dbt = shutil.which("dbt")
     if not dbt:
@@ -255,7 +365,20 @@ def compare(
             client = bigquery_client(profile_output(project, profiles_dir, target))
             base_bytes, base_columns = dry_run(client, sql["base"])
             head_bytes, head_columns = dry_run(client, sql["head"])
-            return report(base_bytes, head_bytes, base_columns, head_columns)
+            columns, skipped = profile_columns(base_columns, head_columns)
+            profile = None
+            profile_note = "Profile not run; pass --execute to compare rows, nulls, distincts, and numeric sums."
+            if execute:
+                query = profile_sql(sql["base"], sql["head"], columns)
+                profile_bytes, _schema = dry_run(client, query)
+                if profile_bytes > PROFILE_SCAN_LIMIT:
+                    profile_note = f"Profile skipped: {format_bytes(profile_bytes)} exceeds {format_bytes(PROFILE_SCAN_LIMIT)} limit."
+                else:
+                    config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
+                    profile = {row["side"]: dict(row.items()) for row in client.query(query, job_config=config).result()}
+                    if set(profile) != {"base", "head"}:
+                        raise RowRayError("BigQuery profile did not return both base and head rows")
+            return report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note)
     finally:
         for worktree in reversed(worktrees):
             subprocess.run(
@@ -276,6 +399,7 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument("--vars", dest="dbt_vars", metavar="YAML")
     diff.add_argument("--warn-error-options", metavar="YAML")
     diff.add_argument("--full-refresh", action="store_true")
+    diff.add_argument("--execute", action="store_true", help="execute aggregate data profiles after a guarded dry run")
     return result
 
 
@@ -291,6 +415,7 @@ def main() -> int:
                 args.dbt_vars,
                 args.warn_error_options,
                 args.full_refresh,
+                args.execute,
             )
         )
         return 0

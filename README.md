@@ -41,7 +41,7 @@ cd your-dbt-project
 rowray diff --select my_model
 ```
 
-RowRay compiles the selected model at the Git base ref and `HEAD`, then uses BigQuery dry runs to compare bytes scanned, estimated on-demand cost, and top-level columns. No model is built and no query is executed.
+RowRay compiles the selected model at the Git base ref and `HEAD`, then uses BigQuery dry runs to compare bytes scanned, estimated on-demand cost, and top-level columns. By default, no model is built and no data query is executed.
 
 The base defaults to `origin/HEAD`, `origin/main`, or `origin/master`. Override dbt or Git selection when needed:
 
@@ -66,6 +66,14 @@ Compile both refs as full refresh instead of using incremental SQL:
 ```bash
 rowray diff --select my_model --full-refresh
 ```
+
+Execute guarded aggregate profiles to compare row counts, null rates, approximate distinct counts, and numeric sums:
+
+```bash
+rowray diff --select my_model --execute
+```
+
+RowRay dry-runs the profile first and skips execution above 200 GiB. Only aggregates are downloaded; raw rows stay in BigQuery.
 
 OAuth/ADC and `service-account` profiles are supported. Only committed changes in `HEAD` are compared.
 

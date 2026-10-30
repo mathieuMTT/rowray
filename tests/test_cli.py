@@ -5,7 +5,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
-from rowray.cli import RowRayError, compile_model, compiled_sql, report, resolve_env, run as run_command
+from rowray.cli import RowRayError, compile_model, compiled_sql, profile_sql, report, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -30,15 +30,31 @@ class CliTest(unittest.TestCase):
         output = report(
             1024**3,
             2 * 1024**3,
-            {"id": ("INTEGER", "REQUIRED"), "old": ("STRING", "NULLABLE")},
-            {"id": ("STRING", "REQUIRED"), "new": ("BOOLEAN", "NULLABLE")},
+            [("id", "INTEGER", "REQUIRED"), ("old", "STRING", "NULLABLE")],
+            [("id", "STRING", "REQUIRED"), ("new", "BOOLEAN", "NULLABLE")],
+            [],
+            [],
+            None,
+            "Profile not run",
         )
         self.assertIn("1.0 GiB", output)
         self.assertIn("2.0 GiB", output)
         self.assertIn("+100.0%", output)
-        self.assertIn("added: new (BOOLEAN NULLABLE)", output)
-        self.assertIn("removed: old (STRING NULLABLE)", output)
-        self.assertIn("changed: id (INTEGER REQUIRED -> STRING REQUIRED)", output)
+        self.assertIn("added: new", output)
+        self.assertIn("removed: old", output)
+        self.assertIn("type changes: id INTEGER → STRING", output)
+
+        sql = profile_sql("select 1 as amount", "select 2 as amount", [("amount", "INTEGER")])
+        self.assertIn("APPROX_COUNT_DISTINCT(`amount`)", sql)
+        self.assertIn("SUM(`amount`)", sql)
+
+        profile = {
+            "base": {"n_rows": 10, "amount__nulls": 1, "amount__distincts": 4, "amount__sum": 100},
+            "head": {"n_rows": 12, "amount__nulls": 0, "amount__distincts": 5, "amount__sum": 120},
+        }
+        output = report(1, 1, [], [], [("amount", "INTEGER")], [], profile, "")
+        self.assertIn("rows: 10 → 12 (+20.0%)", output)
+        self.assertIn("| amount | 10.0% → 0.0% | 4 → 5 | 100 → 120 |", output)
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")
