@@ -103,6 +103,7 @@ def compile_model(
     profiles_dir: Path,
     target: str | None,
     dbt_vars: str | None,
+    warn_error_options: str | None,
 ) -> str:
     common = ["--project-dir", str(project), "--profiles-dir", str(profiles_dir)]
     if target:
@@ -112,6 +113,8 @@ def compile_model(
     compile_args = [dbt, "compile", *common, "--target-path", str(target_path), "--select", model]
     if dbt_vars:
         compile_args += ["--vars", dbt_vars]
+    if warn_error_options:
+        compile_args += ["--warn-error-options", warn_error_options]
     run(compile_args, project)
     return compiled_sql(target_path, model)
 
@@ -192,6 +195,7 @@ def compare(
     profiles_dir: Path | None,
     target: str | None,
     dbt_vars: str | None,
+    warn_error_options: str | None,
 ) -> str:
     dbt = shutil.which("dbt")
     if not dbt:
@@ -222,6 +226,7 @@ def compare(
                     profiles_dir,
                     target,
                     dbt_vars,
+                    warn_error_options,
                 )
             client = bigquery_client(profile_output(project, profiles_dir, target))
             return report(dry_run_bytes(client, sql["base"]), dry_run_bytes(client, sql["head"]))
@@ -243,13 +248,23 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument("--profiles-dir", type=Path)
     diff.add_argument("--target")
     diff.add_argument("--vars", dest="dbt_vars", metavar="YAML")
+    diff.add_argument("--warn-error-options", metavar="YAML")
     return result
 
 
 def main() -> int:
     args = parser().parse_args()
     try:
-        print(compare(args.select, args.base, args.profiles_dir, args.target, args.dbt_vars))
+        print(
+            compare(
+                args.select,
+                args.base,
+                args.profiles_dir,
+                args.target,
+                args.dbt_vars,
+                args.warn_error_options,
+            )
+        )
         return 0
     except (OSError, RowRayError, yaml.YAMLError, ValueError) as error:
         print(f"rowray: {error}", file=sys.stderr)

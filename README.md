@@ -55,6 +55,12 @@ Pass required dbt variables as YAML or JSON. The same values are used for both r
 rowray diff --select my_model --vars '{"execution_date":"2026-10-29","is_backfill":false}'
 ```
 
+Forward dbt warning handling when a project promotes warnings to errors:
+
+```bash
+rowray diff --select my_model --warn-error-options '{"silence":["CustomKeyInConfigDeprecation"]}'
+```
+
 OAuth/ADC and `service-account` profiles are supported. Only committed changes in `HEAD` are compared.
 
 ## Update or remove

@@ -37,9 +37,18 @@ class CliTest(unittest.TestCase):
 
     @patch("rowray.cli.compiled_sql", return_value="select 1")
     @patch("rowray.cli.run")
-    def test_passes_vars_to_dbt_compile(self, run, _compiled_sql):
+    def test_passes_options_to_dbt_compile(self, run, _compiled_sql):
         project = Path("/project")
-        compile_model("dbt", project, Path("/target"), "orders", Path("/profiles"), None, "{day: 1}")
+        compile_model(
+            "dbt",
+            project,
+            Path("/target"),
+            "orders",
+            Path("/profiles"),
+            None,
+            "{day: 1}",
+            '{"silence":["Deprecation"]}',
+        )
         self.assertEqual(
             run.call_args,
             call(
@@ -56,6 +65,8 @@ class CliTest(unittest.TestCase):
                     "orders",
                     "--vars",
                     "{day: 1}",
+                    "--warn-error-options",
+                    '{"silence":["Deprecation"]}',
                 ],
                 project,
             ),
