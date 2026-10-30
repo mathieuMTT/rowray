@@ -61,6 +61,12 @@ Forward dbt warning handling when a project promotes warnings to errors:
 rowray diff --select my_model --warn-error-options '{"silence":["CustomKeyInConfigDeprecation"]}'
 ```
 
+Compile both refs as full refresh instead of using incremental SQL:
+
+```bash
+rowray diff --select my_model --full-refresh
+```
+
 OAuth/ADC and `service-account` profiles are supported. Only committed changes in `HEAD` are compared.
 
 ## Update or remove

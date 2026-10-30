@@ -104,13 +104,17 @@ def compile_model(
     target: str | None,
     dbt_vars: str | None,
     warn_error_options: str | None,
+    full_refresh: bool,
 ) -> str:
     common = ["--project-dir", str(project), "--profiles-dir", str(profiles_dir)]
     if target:
         common += ["--target", target]
     if (project / "packages.yml").is_file() or (project / "dependencies.yml").is_file():
         run([dbt, "deps", *common], project)
-    compile_args = [dbt, "compile", *common, "--target-path", str(target_path), "--select", model]
+    compile_args = [dbt, "compile"]
+    if full_refresh:
+        compile_args.append("--full-refresh")
+    compile_args += [*common, "--target-path", str(target_path), "--select", model]
     if dbt_vars:
         compile_args += ["--vars", dbt_vars]
     if warn_error_options:
@@ -196,6 +200,7 @@ def compare(
     target: str | None,
     dbt_vars: str | None,
     warn_error_options: str | None,
+    full_refresh: bool,
 ) -> str:
     dbt = shutil.which("dbt")
     if not dbt:
@@ -227,6 +232,7 @@ def compare(
                     target,
                     dbt_vars,
                     warn_error_options,
+                    full_refresh,
                 )
             client = bigquery_client(profile_output(project, profiles_dir, target))
             return report(dry_run_bytes(client, sql["base"]), dry_run_bytes(client, sql["head"]))
@@ -249,6 +255,7 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument("--target")
     diff.add_argument("--vars", dest="dbt_vars", metavar="YAML")
     diff.add_argument("--warn-error-options", metavar="YAML")
+    diff.add_argument("--full-refresh", action="store_true")
     return result
 
 
@@ -263,6 +270,7 @@ def main() -> int:
                 args.target,
                 args.dbt_vars,
                 args.warn_error_options,
+                args.full_refresh,
             )
         )
         return 0

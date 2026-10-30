@@ -48,6 +48,7 @@ class CliTest(unittest.TestCase):
             None,
             "{day: 1}",
             '{"silence":["Deprecation"]}',
+            True,
         )
         self.assertEqual(
             run.call_args,
@@ -55,6 +56,7 @@ class CliTest(unittest.TestCase):
                 [
                     "dbt",
                     "compile",
+                    "--full-refresh",
                     "--project-dir",
                     "/project",
                     "--profiles-dir",
