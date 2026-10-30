@@ -23,7 +23,7 @@ class RowRayError(Exception):
 def run(command: list[str], cwd: Path) -> str:
     result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
     if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip()
+        detail = "\n".join(output.strip() for output in (result.stdout, result.stderr) if output.strip())
         raise RowRayError(f"{' '.join(command)} failed\n{detail}")
     return result.stdout.strip()
 

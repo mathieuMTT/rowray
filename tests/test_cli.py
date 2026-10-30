@@ -2,9 +2,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
-from rowray.cli import compile_model, compiled_sql, report, resolve_env
+from rowray.cli import RowRayError, compile_model, compiled_sql, report, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -59,6 +60,12 @@ class CliTest(unittest.TestCase):
                 project,
             ),
         )
+
+    @patch("rowray.cli.subprocess.run", return_value=CompletedProcess([], 1, "dbt error", "dependency warning"))
+    def test_reports_dbt_error_before_warnings(self, _subprocess_run):
+        with self.assertRaises(RowRayError) as context:
+            run_command(["dbt", "compile"], Path("/project"))
+        self.assertLess(str(context.exception).index("dbt error"), str(context.exception).index("dependency warning"))
 
 
 if __name__ == "__main__":
