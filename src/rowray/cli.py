@@ -147,11 +147,12 @@ def compile_model(
     dbt_vars: str | None,
     warn_error_options: str | None,
     full_refresh: bool,
+    install_deps: bool,
 ) -> str:
     common = ["--project-dir", str(project), "--profiles-dir", str(profiles_dir)]
     if target:
         common += ["--target", target]
-    if (project / "packages.yml").is_file() or (project / "dependencies.yml").is_file():
+    if install_deps and ((project / "packages.yml").is_file() or (project / "dependencies.yml").is_file()):
         run([dbt, "deps", *common], project)
     compile_args = [dbt, "compile"]
     if full_refresh:
@@ -412,28 +413,41 @@ def compare(
     try:
         with tempfile.TemporaryDirectory(prefix="rowray-") as temporary:
             temporary_path = Path(temporary)
-            jobs = {}
-            for label, ref in (("base", base), ("head", "HEAD")):
-                worktree = temporary_path / label
-                run(["git", "worktree", "add", "--detach", str(worktree), ref], repo)
-                worktrees.append(worktree)
-                jobs[label] = (
+            base_worktree = temporary_path / "base"
+            run(["git", "worktree", "add", "--detach", str(base_worktree), base], repo)
+            worktrees.append(base_worktree)
+            jobs = {
+                "base": (
                     dbt,
-                    worktree / relative_project,
-                    temporary_path / f"{label}-target",
+                    base_worktree / relative_project,
+                    temporary_path / "base-target",
                     model,
                     profiles_dir,
                     target,
                     dbt_vars,
                     warn_error_options,
                     full_refresh,
-                )
-            with progress(f"Compile BASE ({base}) + HEAD in parallel"):
+                    True,
+                ),
+                "head": (
+                    dbt,
+                    project,
+                    temporary_path / "head-target",
+                    model,
+                    profiles_dir,
+                    target,
+                    dbt_vars,
+                    warn_error_options,
+                    full_refresh,
+                    False,
+                ),
+            }
+            with progress(f"Compile BASE ({base}) + working tree in parallel"):
                 sql = compile_refs(jobs)
             client = bigquery_client(profile_output(project, profiles_dir, target))
             with progress("Dry-run BASE"):
                 base_bytes, base_columns = dry_run(client, sql["base"])
-            with progress("Dry-run HEAD"):
+            with progress("Dry-run working tree"):
                 head_bytes, head_columns = dry_run(client, sql["head"])
             columns, skipped = profile_columns(base_columns, head_columns)
             profile = None

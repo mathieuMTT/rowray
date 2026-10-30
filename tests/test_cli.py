@@ -82,6 +82,7 @@ class CliTest(unittest.TestCase):
             "{day: 1}",
             '{"silence":["Deprecation"]}',
             True,
+            False,
         )
         self.assertEqual(
             run.call_args,
@@ -116,7 +117,7 @@ class CliTest(unittest.TestCase):
             return str(arguments[1])
 
         compile_model.side_effect = compile_ref
-        arguments = ("dbt", Path("/base"), Path("/target"), "orders", Path("/profiles"), None, None, None, False)
+        arguments = ("dbt", Path("/base"), Path("/target"), "orders", Path("/profiles"), None, None, None, False, False)
         result = compile_refs({"base": arguments, "head": arguments[:1] + (Path("/head"),) + arguments[2:]})
         self.assertEqual(result, {"base": "/base", "head": "/head"})
 
