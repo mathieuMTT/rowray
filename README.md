@@ -1,19 +1,38 @@
 # RowRay
 
-RowRay shows how a dbt code change affects data before merge, without requiring a development build.
+RowRay compares one dbt model from a Git base ref with the current working tree, including committed, staged, unstaged, and untracked changes. It targets dbt projects using BigQuery and never materializes the model.
 
-The first version is a local, open-source CLI for dbt and BigQuery.
+## What it compares
+
+By default, RowRay compiles both versions and uses BigQuery dry runs to report:
+
+- Bytes scanned and estimated on-demand cost
+- Top-level columns added or removed
+- Top-level column type changes
+
+With `--execute`, RowRay runs guarded aggregate queries and also reports:
+
+- Row counts
+- Null rates
+- Approximate distinct counts
+- Sums for numeric columns
+
+With `--column NAME`, it adds BASE and working-tree row counts plus percentage variation for every value in one column.
 
 ## Requirements
 
-RowRay expects Python 3.10+, Git, and an existing dbt repository connected to BigQuery. Before installing RowRay, this must succeed from the dbt project:
+- Python 3.10+
+- Git
+- An existing dbt project connected to BigQuery
+- A `dbt` executable available in the current shell
+
+Before installing RowRay, this must succeed from the dbt project:
 
 ```bash
-cd your-dbt-project
 dbt debug
 ```
 
-RowRay reuses that `dbt` command, `dbt_project.yml`, `profiles.yml`, target, and BigQuery credentials.
+RowRay reuses the project's `dbt_project.yml`, `profiles.yml`, target, environment variables, and BigQuery credentials. OAuth/ADC, `service-account`, and `service-account-json` profiles are supported.
 
 ## Install
 
@@ -24,9 +43,9 @@ uv tool install git+ssh://git@github.com/mathieuMTT/rowray.git
 rowray --help
 ```
 
-If uv reports that its executable directory is missing from `PATH`, run `uv tool update-shell` and restart the shell.
+If uv says its executable directory is missing from `PATH`, run `uv tool update-shell` and restart the shell.
 
-For one run without permanent installation:
+Run once without permanent installation:
 
 ```bash
 uvx --from git+ssh://git@github.com/mathieuMTT/rowray.git rowray --help
@@ -34,59 +53,85 @@ uvx --from git+ssh://git@github.com/mathieuMTT/rowray.git rowray --help
 
 ## Use
 
-Run RowRay from the existing dbt project, in the same shell where `dbt debug` works:
+Run RowRay inside the existing dbt project:
 
 ```bash
-cd your-dbt-project
 rowray diff --select my_model
 ```
 
-RowRay compiles the selected model at the Git base ref and `HEAD`, then uses BigQuery dry runs to compare bytes scanned, estimated on-demand cost, and top-level columns. By default, no model is built and no data query is executed.
-
-The base defaults to `origin/HEAD`, `origin/main`, or `origin/master`. Override dbt or Git selection when needed:
+The Git base defaults to `origin/HEAD`, then `origin/main`, then `origin/master`. Override it or the dbt target when needed:
 
 ```bash
 rowray diff --select my_model --base origin/main --target dev
 ```
 
-Pass required dbt variables as YAML or JSON. The same values are used for both refs:
+Pass required dbt variables as YAML or JSON. Identical values are used for BASE and the working tree:
 
 ```bash
-rowray diff --select my_model --vars '{"execution_date":"2026-10-29","is_backfill":false}'
+rowray diff \
+  --select my_model \
+  --vars '{"execution_date":"2026-10-29","is_backfill":false}'
 ```
 
-Forward dbt warning handling when a project promotes warnings to errors:
+Forward dbt warning handling when the project promotes warnings to errors:
 
 ```bash
-rowray diff --select my_model --warn-error-options '{"silence":["CustomKeyInConfigDeprecation"]}'
+rowray diff \
+  --select my_model \
+  --warn-error-options '{"silence":["CustomKeyInConfigDeprecation"]}'
 ```
 
-Compile both refs as full refresh instead of using incremental SQL:
+Compile both versions using dbt full-refresh semantics. This still does not materialize the model:
 
 ```bash
 rowray diff --select my_model --full-refresh
 ```
 
-Execute guarded aggregate profiles to compare row counts, null rates, approximate distinct counts, and numeric sums:
+## Compare aggregate data
+
+Aggregate profiling requires explicit execution:
 
 ```bash
 rowray diff --select my_model --execute
 ```
 
-RowRay dry-runs the profile first and skips execution above 200 GiB. Only aggregates are downloaded; raw rows stay in BigQuery.
-
-Analyze row counts per value for one shared scalar column:
+Analyze counts and variation for every value of one shared scalar column:
 
 ```bash
 rowray diff --select my_model --execute --column page_type
 ```
 
-The result lists BASE and working-tree counts plus percentage variation for every value, ordered by volume. The focus query has its own 200 GiB billing cap.
+`--column` prints actual distinct values. Do not use it on sensitive or very high-cardinality columns unless that terminal output is acceptable.
 
-Each compile and BigQuery phase shows a lightweight zero-dependency spinner with elapsed time. Non-interactive logs use static progress lines.
-BASE compiles in an isolated Git worktree while the current dbt project compiles concurrently with its committed and uncommitted changes. Both use isolated target directories.
+## Execution and cost safety
 
-OAuth/ADC and `service-account` profiles are supported. Staged, unstaged, and untracked changes inside the current dbt project are included.
+- BASE compiles in an isolated Git worktree.
+- The current dbt project compiles concurrently with all local changes and an isolated target directory.
+- BigQuery comparisons are dry-run only unless `--execute` is passed.
+- Each aggregate query is dry-run first and skipped above 200 GiB.
+- Each executed aggregate query also sets `maximum_bytes_billed` to 200 GiB.
+- `--column` runs an additional aggregate query with its own 200 GiB cap.
+- Raw rows are not downloaded, but `--column` downloads distinct values and their counts.
+- dbt compilation may run warehouse introspection or project macros such as `run_query`; RowRay cannot make arbitrary dbt projects query-free.
+
+The displayed USD amount is an estimate:
+
+```text
+bytes processed / 1024⁴ × $6.25
+```
+
+`$6.25/TiB` is a fixed [BigQuery on-demand list price](https://cloud.google.com/bigquery/pricing), not fetched automatically. The estimate does not account for the free tier, capacity pricing, reservations, discounts, currency, or prior monthly usage.
+
+## Current limits
+
+- One selected model per command
+- BigQuery only
+- Top-level schema comparison only
+- Schema comparison checks column names and types, not `NULLABLE`/`REQUIRED` mode changes
+- Aggregate profiles skip repeated, nested, `GEOGRAPHY`, and `JSON` columns
+- Distinct counts use `APPROX_COUNT_DISTINCT`
+- `--column` returns every value without an output limit
+- The current project must already have its dbt dependencies installed; RowRay installs dependencies only in the BASE worktree
 
 ## Update or remove
 
@@ -95,4 +140,4 @@ uv tool upgrade rowray
 uv tool uninstall rowray
 ```
 
-See [ROADMAP.md](ROADMAP.md) for the project stages.
+See [ROADMAP.md](ROADMAP.md) for planned stages.

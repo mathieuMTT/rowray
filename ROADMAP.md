@@ -19,7 +19,7 @@ Goal: prove the core workflow with one model and BigQuery.
 - Create the Python project with `uv`
 - Add a small `rowray` CLI
 - Locate a dbt project and profiles directory
-- Create isolated HEAD and base Git worktrees
+- Create an isolated base Git worktree and compile the current working tree
 - Run `dbt compile` for both refs in separate processes
 - Read compiled SQL from versioned dbt artifacts
 - Run BigQuery dry runs
@@ -52,7 +52,7 @@ Goal: provide enough evidence to review a dbt change locally.
 Exit criteria:
 
 - A user can understand model impact from one command
-- Full refresh is dry-run only
+- Full refresh never materializes the model; aggregate queries remain explicit and cost-capped
 - Expensive queries are blocked before execution
 - The same result can be consumed by a human or CI system
 

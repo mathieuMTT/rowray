@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "rowray"
 version = "0.1.0"
-description = "Compare dbt model scan costs between Git refs"
+description = "Compare dbt model data and scan cost against a Git base ref"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

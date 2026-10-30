@@ -338,7 +338,7 @@ def focus_report(column: str, rows: list[dict] | None, note: str | None = None) 
         base_rows = int(row["base_rows"])
         head_rows = int(row["head_rows"])
         table_rows.append((value.replace("│", "|"), f"{base_rows:,}", f"{head_rows:,}", delta(base_rows, head_rows)))
-    return "\n".join(lines + terminal_table(("Value", "BASE rows", "HEAD rows", "Variation"), table_rows, {1, 2, 3}))
+    return "\n".join(lines + terminal_table(("Value", "BASE rows", "WORKTREE rows", "Variation"), table_rows, {1, 2, 3}))
 
 
 def format_bytes(value: int) -> str:
@@ -368,7 +368,7 @@ def report(
     base_cost = base / 1024**4 * PRICE_PER_TIB
     head_cost = head / 1024**4 * PRICE_PER_TIB
     lines = [
-        f"{'':12}{'BASE':>14}{'HEAD':>14}{'DELTA':>14}",
+        f"{'':12}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}",
         f"{'Scan':12}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
         f"{'Cost (USD)':12}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
         "",
@@ -529,16 +529,16 @@ def compare(
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="rowray", description="Compare dbt model scan costs between Git refs")
+    result = argparse.ArgumentParser(prog="rowray", description="Compare one dbt model against a Git base ref")
     subcommands = result.add_subparsers(dest="command", required=True)
-    diff = subcommands.add_parser("diff")
-    diff.add_argument("--select", required=True, metavar="MODEL")
-    diff.add_argument("--base", metavar="REF")
-    diff.add_argument("--profiles-dir", type=Path)
-    diff.add_argument("--target")
-    diff.add_argument("--vars", dest="dbt_vars", metavar="YAML")
-    diff.add_argument("--warn-error-options", metavar="YAML")
-    diff.add_argument("--full-refresh", action="store_true")
+    diff = subcommands.add_parser("diff", help="compare BASE with the current working tree")
+    diff.add_argument("--select", required=True, metavar="MODEL", help="one dbt model name")
+    diff.add_argument("--base", metavar="REF", help="Git base ref; defaults to the origin default branch")
+    diff.add_argument("--profiles-dir", type=Path, help="directory containing profiles.yml")
+    diff.add_argument("--target", help="dbt target override")
+    diff.add_argument("--vars", dest="dbt_vars", metavar="YAML", help="dbt variables passed unchanged to both compiles")
+    diff.add_argument("--warn-error-options", metavar="YAML", help="dbt warning options passed unchanged to both compiles")
+    diff.add_argument("--full-refresh", action="store_true", help="compile both versions with dbt full-refresh semantics")
     diff.add_argument("--execute", action="store_true", help="execute aggregate data profiles after a guarded dry run")
     diff.add_argument("--column", metavar="NAME", help="compare row counts per value; requires --execute")
     return result

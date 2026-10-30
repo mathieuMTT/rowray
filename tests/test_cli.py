@@ -68,8 +68,8 @@ class CliTest(unittest.TestCase):
                 {"value": "product", "base_rows": 0, "head_rows": 25},
             ],
         )
-        self.assertIn("│ home    │       100 │        80 │    -20.0% │", output)
-        self.assertIn("│ product │         0 │        25 │       new │", output)
+        self.assertIn("│ home    │       100 │            80 │    -20.0% │", output)
+        self.assertIn("│ product │         0 │            25 │       new │", output)
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")
