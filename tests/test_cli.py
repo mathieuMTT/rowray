@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -7,7 +8,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
-from rowray.cli import RowRayError, compile_model, compiled_sql, profile_sql, progress, report, resolve_env, run as run_command
+from rowray.cli import RowRayError, compile_model, compile_refs, compiled_sql, profile_sql, progress, report, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -105,6 +106,19 @@ class CliTest(unittest.TestCase):
                 project,
             ),
         )
+
+    @patch("rowray.cli.compile_model")
+    def test_compiles_refs_in_parallel(self, compile_model):
+        barrier = threading.Barrier(2)
+
+        def compile_ref(*arguments):
+            barrier.wait(timeout=5)
+            return str(arguments[1])
+
+        compile_model.side_effect = compile_ref
+        arguments = ("dbt", Path("/base"), Path("/target"), "orders", Path("/profiles"), None, None, None, False)
+        result = compile_refs({"base": arguments, "head": arguments[:1] + (Path("/head"),) + arguments[2:]})
+        self.assertEqual(result, {"base": "/base", "head": "/head"})
 
     @patch("rowray.cli.subprocess.run", return_value=CompletedProcess([], 1, "dbt error", "dependency warning"))
     def test_reports_dbt_error_before_warnings(self, _subprocess_run):

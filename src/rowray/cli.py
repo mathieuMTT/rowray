@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -162,6 +163,12 @@ def compile_model(
         compile_args += ["--warn-error-options", warn_error_options]
     run(compile_args, project)
     return compiled_sql(target_path, model)
+
+
+def compile_refs(jobs: dict[str, tuple]) -> dict[str, str]:
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {label: executor.submit(compile_model, *arguments) for label, arguments in jobs.items()}
+        return {label: future.result() for label, future in futures.items()}
 
 
 def profile_output(project: Path, profiles_dir: Path, target: str | None) -> dict:
@@ -384,23 +391,24 @@ def compare(
     try:
         with tempfile.TemporaryDirectory(prefix="rowray-") as temporary:
             temporary_path = Path(temporary)
-            sql = {}
+            jobs = {}
             for label, ref in (("base", base), ("head", "HEAD")):
-                with progress(f"Compile {label.upper()} ({ref})"):
-                    worktree = temporary_path / label
-                    run(["git", "worktree", "add", "--detach", str(worktree), ref], repo)
-                    worktrees.append(worktree)
-                    sql[label] = compile_model(
-                        dbt,
-                        worktree / relative_project,
-                        temporary_path / f"{label}-target",
-                        model,
-                        profiles_dir,
-                        target,
-                        dbt_vars,
-                        warn_error_options,
-                        full_refresh,
-                    )
+                worktree = temporary_path / label
+                run(["git", "worktree", "add", "--detach", str(worktree), ref], repo)
+                worktrees.append(worktree)
+                jobs[label] = (
+                    dbt,
+                    worktree / relative_project,
+                    temporary_path / f"{label}-target",
+                    model,
+                    profiles_dir,
+                    target,
+                    dbt_vars,
+                    warn_error_options,
+                    full_refresh,
+                )
+            with progress(f"Compile BASE ({base}) + HEAD in parallel"):
+                sql = compile_refs(jobs)
             client = bigquery_client(profile_output(project, profiles_dir, target))
             with progress("Dry-run BASE"):
                 base_bytes, base_columns = dry_run(client, sql["base"])

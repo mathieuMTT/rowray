@@ -76,6 +76,7 @@ rowray diff --select my_model --execute
 RowRay dry-runs the profile first and skips execution above 200 GiB. Only aggregates are downloaded; raw rows stay in BigQuery.
 
 Each compile and BigQuery phase shows a lightweight zero-dependency spinner with elapsed time. Non-interactive logs use static progress lines.
+BASE and HEAD compile concurrently in isolated worktrees and target directories.
 
 OAuth/ADC and `service-account` profiles are supported. Only committed changes in `HEAD` are compared.
 
