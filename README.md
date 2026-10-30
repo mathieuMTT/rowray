@@ -75,6 +75,14 @@ rowray diff --select my_model --execute
 
 RowRay dry-runs the profile first and skips execution above 200 GiB. Only aggregates are downloaded; raw rows stay in BigQuery.
 
+Analyze row counts per value for one shared scalar column:
+
+```bash
+rowray diff --select my_model --execute --column page_type
+```
+
+The result lists BASE and working-tree counts plus percentage variation for every value, ordered by volume. The focus query has its own 200 GiB billing cap.
+
 Each compile and BigQuery phase shows a lightweight zero-dependency spinner with elapsed time. Non-interactive logs use static progress lines.
 BASE compiles in an isolated Git worktree while the current dbt project compiles concurrently with its committed and uncommitted changes. Both use isolated target directories.
 

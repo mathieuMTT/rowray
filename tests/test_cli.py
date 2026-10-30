@@ -8,7 +8,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
-from rowray.cli import RowRayError, compile_model, compile_refs, compiled_sql, profile_sql, progress, report, resolve_env, run as run_command
+from rowray.cli import RowRayError, compile_model, compile_refs, compiled_sql, focus_report, focus_sql, profile_sql, progress, report, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -58,6 +58,18 @@ class CliTest(unittest.TestCase):
         output = report(1, 1, [], [], [("amount", "INTEGER")], [], profile, "")
         self.assertIn("rows: 10 → 12 (+20.0%)", output)
         self.assertIn("│ amount │ 10.0% → 0.0% │     4 → 5 │ 100 → 120 │", output)
+
+        sql = focus_sql("select 'home' as page_type", "select 'product' as page_type", "page_type")
+        self.assertIn("GROUP BY value", sql)
+        output = focus_report(
+            "page_type",
+            [
+                {"value": "home", "base_rows": 100, "head_rows": 80},
+                {"value": "product", "base_rows": 0, "head_rows": 25},
+            ],
+        )
+        self.assertIn("│ home    │       100 │        80 │    -20.0% │", output)
+        self.assertIn("│ product │         0 │        25 │       new │", output)
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")

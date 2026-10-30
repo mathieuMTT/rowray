@@ -271,6 +271,24 @@ def profile_sql(base_sql: str, head_sql: str, columns: list[tuple[str, str]]) ->
     )
 
 
+def focus_sql(base_sql: str, head_sql: str, column: str) -> str:
+    name = identifier(column)
+    return (
+        "WITH base AS (\n"
+        f"{base_sql}\n"
+        "), head AS (\n"
+        f"{head_sql}\n"
+        "), counts AS (\n"
+        f"    SELECT {name} AS value, COUNT(*) AS base_rows, 0 AS head_rows FROM base GROUP BY value\n"
+        "    UNION ALL\n"
+        f"    SELECT {name} AS value, 0 AS base_rows, COUNT(*) AS head_rows FROM head GROUP BY value\n"
+        ")\n"
+        "SELECT value, SUM(base_rows) AS base_rows, SUM(head_rows) AS head_rows\n"
+        "FROM counts GROUP BY value\n"
+        "ORDER BY GREATEST(base_rows, head_rows) DESC"
+    )
+
+
 def percentage(part: float, total: float) -> str:
     return "0%" if not total else f"{100 * part / total:.1f}%"
 
@@ -307,6 +325,20 @@ def terminal_table(headers: tuple[str, ...], rows: list[tuple[str, ...]], right:
         *(line(row) for row in rows),
         border("└", "┴", "┘"),
     ]
+
+
+def focus_report(column: str, rows: list[dict] | None, note: str | None = None) -> str:
+    lines = [f"Column focus: {column}"]
+    if rows is None:
+        lines.append(note or "Focus not run.")
+        return "\n".join(lines)
+    table_rows = []
+    for row in rows:
+        value = "NULL" if row["value"] is None else "".join(char if char.isprintable() else " " for char in str(row["value"]))
+        base_rows = int(row["base_rows"])
+        head_rows = int(row["head_rows"])
+        table_rows.append((value.replace("│", "|"), f"{base_rows:,}", f"{head_rows:,}", delta(base_rows, head_rows)))
+    return "\n".join(lines + terminal_table(("Value", "BASE rows", "HEAD rows", "Variation"), table_rows, {1, 2, 3}))
 
 
 def format_bytes(value: int) -> str:
@@ -396,6 +428,7 @@ def compare(
     warn_error_options: str | None,
     full_refresh: bool,
     execute: bool,
+    column: str | None,
 ) -> str:
     dbt = shutil.which("dbt")
     if not dbt:
@@ -452,6 +485,10 @@ def compare(
             columns, skipped = profile_columns(base_columns, head_columns)
             profile = None
             profile_note = "Profile not run; pass --execute to compare rows, nulls, distincts, and numeric sums."
+            focus_rows = None
+            focus_note = None
+            if column and not execute:
+                raise RowRayError("--column requires --execute because value counts run a BigQuery query")
             if execute:
                 query = profile_sql(sql["base"], sql["head"], columns)
                 with progress("Dry-run profile"):
@@ -464,7 +501,24 @@ def compare(
                         profile = {row["side"]: dict(row.items()) for row in client.query(query, job_config=config).result()}
                     if set(profile) != {"base", "head"}:
                         raise RowRayError("BigQuery profile did not return both base and head rows")
-            return report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note)
+            if column:
+                base_by_name = {name: (field_type, mode) for name, field_type, mode in base_columns}
+                head_by_name = {name: (field_type, mode) for name, field_type, mode in head_columns}
+                if column not in base_by_name or column not in head_by_name or base_by_name[column] != head_by_name[column]:
+                    raise RowRayError(f"column {column!r} is missing or has a different type between base and working tree")
+                if base_by_name[column][1] == "REPEATED" or base_by_name[column][0] in SKIPPED_TYPES:
+                    raise RowRayError(f"column {column!r} is repeated or nested and cannot be focused")
+                query = focus_sql(sql["base"], sql["head"], column)
+                with progress(f"Dry-run column {column}"):
+                    focus_bytes, _schema = dry_run(client, query)
+                if focus_bytes > PROFILE_SCAN_LIMIT:
+                    focus_note = f"Focus skipped: {format_bytes(focus_bytes)} exceeds {format_bytes(PROFILE_SCAN_LIMIT)} limit."
+                else:
+                    with progress(f"Analyze column {column}"):
+                        config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
+                        focus_rows = [dict(row.items()) for row in client.query(query, job_config=config).result()]
+            output = report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note)
+            return output + (f"\n\n{focus_report(column, focus_rows, focus_note)}" if column else "")
     finally:
         for worktree in reversed(worktrees):
             subprocess.run(
@@ -486,6 +540,7 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument("--warn-error-options", metavar="YAML")
     diff.add_argument("--full-refresh", action="store_true")
     diff.add_argument("--execute", action="store_true", help="execute aggregate data profiles after a guarded dry run")
+    diff.add_argument("--column", metavar="NAME", help="compare row counts per value; requires --execute")
     return result
 
 
@@ -502,6 +557,7 @@ def main() -> int:
                 args.warn_error_options,
                 args.full_refresh,
                 args.execute,
+                args.column,
             )
         )
         return 0
