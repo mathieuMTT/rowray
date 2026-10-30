@@ -95,13 +95,24 @@ def compiled_sql(target_path: Path, model: str) -> str:
     return sql
 
 
-def compile_model(dbt: str, project: Path, target_path: Path, model: str, profiles_dir: Path, target: str | None) -> str:
+def compile_model(
+    dbt: str,
+    project: Path,
+    target_path: Path,
+    model: str,
+    profiles_dir: Path,
+    target: str | None,
+    dbt_vars: str | None,
+) -> str:
     common = ["--project-dir", str(project), "--profiles-dir", str(profiles_dir)]
     if target:
         common += ["--target", target]
     if (project / "packages.yml").is_file() or (project / "dependencies.yml").is_file():
         run([dbt, "deps", *common], project)
-    run([dbt, "compile", *common, "--target-path", str(target_path), "--select", model], project)
+    compile_args = [dbt, "compile", *common, "--target-path", str(target_path), "--select", model]
+    if dbt_vars:
+        compile_args += ["--vars", dbt_vars]
+    run(compile_args, project)
     return compiled_sql(target_path, model)
 
 
@@ -175,7 +186,13 @@ def report(base: int, head: int) -> str:
     )
 
 
-def compare(model: str, base: str | None, profiles_dir: Path | None, target: str | None) -> str:
+def compare(
+    model: str,
+    base: str | None,
+    profiles_dir: Path | None,
+    target: str | None,
+    dbt_vars: str | None,
+) -> str:
     dbt = shutil.which("dbt")
     if not dbt:
         raise RowRayError("dbt not found; activate the environment used by this project")
@@ -204,6 +221,7 @@ def compare(model: str, base: str | None, profiles_dir: Path | None, target: str
                     model,
                     profiles_dir,
                     target,
+                    dbt_vars,
                 )
             client = bigquery_client(profile_output(project, profiles_dir, target))
             return report(dry_run_bytes(client, sql["base"]), dry_run_bytes(client, sql["head"]))
@@ -224,13 +242,14 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument("--base", metavar="REF")
     diff.add_argument("--profiles-dir", type=Path)
     diff.add_argument("--target")
+    diff.add_argument("--vars", dest="dbt_vars", metavar="YAML")
     return result
 
 
 def main() -> int:
     args = parser().parse_args()
     try:
-        print(compare(args.select, args.base, args.profiles_dir, args.target))
+        print(compare(args.select, args.base, args.profiles_dir, args.target, args.dbt_vars))
         return 0
     except (OSError, RowRayError, yaml.YAMLError, ValueError) as error:
         print(f"rowray: {error}", file=sys.stderr)

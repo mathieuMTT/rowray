@@ -2,9 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
-from rowray.cli import compiled_sql, report, resolve_env
+from rowray.cli import compile_model, compiled_sql, report, resolve_env
 
 
 class CliTest(unittest.TestCase):
@@ -33,6 +33,32 @@ class CliTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")
+
+    @patch("rowray.cli.compiled_sql", return_value="select 1")
+    @patch("rowray.cli.run")
+    def test_passes_vars_to_dbt_compile(self, run, _compiled_sql):
+        project = Path("/project")
+        compile_model("dbt", project, Path("/target"), "orders", Path("/profiles"), None, "{day: 1}")
+        self.assertEqual(
+            run.call_args,
+            call(
+                [
+                    "dbt",
+                    "compile",
+                    "--project-dir",
+                    "/project",
+                    "--profiles-dir",
+                    "/profiles",
+                    "--target-path",
+                    "/target",
+                    "--select",
+                    "orders",
+                    "--vars",
+                    "{day: 1}",
+                ],
+                project,
+            ),
+        )
 
 
 if __name__ == "__main__":

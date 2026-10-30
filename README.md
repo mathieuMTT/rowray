@@ -49,6 +49,12 @@ The base defaults to `origin/HEAD`, `origin/main`, or `origin/master`. Override 
 rowray diff --select my_model --base origin/main --target dev
 ```
 
+Pass required dbt variables as YAML or JSON. The same values are used for both refs:
+
+```bash
+rowray diff --select my_model --vars '{"execution_date":"2026-10-29","is_backfill":false}'
+```
+
 OAuth/ADC and `service-account` profiles are supported. Only committed changes in `HEAD` are compared.
 
 ## Update or remove
