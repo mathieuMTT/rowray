@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rowray"
+version = "0.1.0"
+description = "Compare dbt model scan costs between Git refs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "google-cloud-bigquery>=3,<4",
+  "pyyaml>=6,<7",
+]
+
+[project.scripts]
+rowray = "rowray.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rowray"]
