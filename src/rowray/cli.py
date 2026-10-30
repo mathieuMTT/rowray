@@ -161,9 +161,11 @@ def bigquery_client(output: dict) -> bigquery.Client:
     raise RowRayError(f"BigQuery authentication method {method!r} is not supported yet")
 
 
-def dry_run_bytes(client: bigquery.Client, sql: str) -> int:
+def dry_run(client: bigquery.Client, sql: str) -> tuple[int, dict[str, tuple[str, str]]]:
     config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
-    return client.query(sql, job_config=config).total_bytes_processed or 0
+    job = client.query(sql, job_config=config)
+    columns = {field.name: (field.field_type, field.mode or "NULLABLE") for field in (job.schema or [])}
+    return job.total_bytes_processed or 0, columns
 
 
 def format_bytes(value: int) -> str:
@@ -180,17 +182,33 @@ def format_delta(base: int, head: int) -> str:
     return f"{(head - base) / base:+.1%}"
 
 
-def report(base: int, head: int) -> str:
+def report(
+    base: int,
+    head: int,
+    base_columns: dict[str, tuple[str, str]],
+    head_columns: dict[str, tuple[str, str]],
+) -> str:
     base_cost = base / 1024**4 * PRICE_PER_TIB
     head_cost = head / 1024**4 * PRICE_PER_TIB
-    return "\n".join(
-        [
-            f"{'':12}{'BASE':>14}{'HEAD':>14}{'DELTA':>14}",
-            f"{'Scan':12}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
-            f"{'Cost (USD)':12}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
-            f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; dry runs execute no query.",
-        ]
+    lines = [
+        f"{'':12}{'BASE':>14}{'HEAD':>14}{'DELTA':>14}",
+        f"{'Scan':12}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
+        f"{'Cost (USD)':12}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
+        "",
+        "Columns",
+    ]
+    added = sorted(head_columns.keys() - base_columns.keys())
+    removed = sorted(base_columns.keys() - head_columns.keys())
+    changed = sorted(name for name in base_columns.keys() & head_columns.keys() if base_columns[name] != head_columns[name])
+    if not (added or removed or changed):
+        lines.append("  no change")
+    lines.extend(f"  added: {name} ({' '.join(head_columns[name])})" for name in added)
+    lines.extend(f"  removed: {name} ({' '.join(base_columns[name])})" for name in removed)
+    lines.extend(
+        f"  changed: {name} ({' '.join(base_columns[name])} -> {' '.join(head_columns[name])})" for name in changed
     )
+    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; dry runs execute no query.")
+    return "\n".join(lines)
 
 
 def compare(
@@ -235,7 +253,9 @@ def compare(
                     full_refresh,
                 )
             client = bigquery_client(profile_output(project, profiles_dir, target))
-            return report(dry_run_bytes(client, sql["base"]), dry_run_bytes(client, sql["head"]))
+            base_bytes, base_columns = dry_run(client, sql["base"])
+            head_bytes, head_columns = dry_run(client, sql["head"])
+            return report(base_bytes, head_bytes, base_columns, head_columns)
     finally:
         for worktree in reversed(worktrees):
             subprocess.run(

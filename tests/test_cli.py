@@ -27,10 +27,18 @@ class CliTest(unittest.TestCase):
             )
             self.assertEqual(compiled_sql(target, "orders"), "select * from raw.orders")
 
-        output = report(1024**3, 2 * 1024**3)
+        output = report(
+            1024**3,
+            2 * 1024**3,
+            {"id": ("INTEGER", "REQUIRED"), "old": ("STRING", "NULLABLE")},
+            {"id": ("STRING", "REQUIRED"), "new": ("BOOLEAN", "NULLABLE")},
+        )
         self.assertIn("1.0 GiB", output)
         self.assertIn("2.0 GiB", output)
         self.assertIn("+100.0%", output)
+        self.assertIn("added: new (BOOLEAN NULLABLE)", output)
+        self.assertIn("removed: old (STRING NULLABLE)", output)
+        self.assertIn("changed: id (INTEGER REQUIRED -> STRING REQUIRED)", output)
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")

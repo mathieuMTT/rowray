@@ -41,7 +41,7 @@ cd your-dbt-project
 rowray diff --select my_model
 ```
 
-RowRay compiles the selected model at the Git base ref and `HEAD`, then uses BigQuery dry runs to compare bytes scanned and estimated on-demand cost. No model is built and no query is executed.
+RowRay compiles the selected model at the Git base ref and `HEAD`, then uses BigQuery dry runs to compare bytes scanned, estimated on-demand cost, and top-level columns. No model is built and no query is executed.
 
 The base defaults to `origin/HEAD`, `origin/main`, or `origin/master`. Override dbt or Git selection when needed:
 
