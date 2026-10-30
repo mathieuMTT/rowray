@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
@@ -21,6 +23,18 @@ ENV_VAR = re.compile(r'''^\s*\{\{\s*env_var\(["']([^"']+)["'](?:,\s*["']([^"']*)
 
 class RowRayError(Exception):
     pass
+
+
+@contextmanager
+def progress(label: str):
+    print(f"→ {label}...", flush=True)
+    started = time.monotonic()
+    try:
+        yield
+    except BaseException:
+        print(f"✗ {label} ({time.monotonic() - started:.1f}s)", flush=True)
+        raise
+    print(f"✓ {label} ({time.monotonic() - started:.1f}s)", flush=True)
 
 
 def run(command: list[str], cwd: Path) -> str:
@@ -348,34 +362,39 @@ def compare(
             temporary_path = Path(temporary)
             sql = {}
             for label, ref in (("base", base), ("head", "HEAD")):
-                worktree = temporary_path / label
-                run(["git", "worktree", "add", "--detach", str(worktree), ref], repo)
-                worktrees.append(worktree)
-                sql[label] = compile_model(
-                    dbt,
-                    worktree / relative_project,
-                    temporary_path / f"{label}-target",
-                    model,
-                    profiles_dir,
-                    target,
-                    dbt_vars,
-                    warn_error_options,
-                    full_refresh,
-                )
+                with progress(f"Compile {label.upper()} ({ref})"):
+                    worktree = temporary_path / label
+                    run(["git", "worktree", "add", "--detach", str(worktree), ref], repo)
+                    worktrees.append(worktree)
+                    sql[label] = compile_model(
+                        dbt,
+                        worktree / relative_project,
+                        temporary_path / f"{label}-target",
+                        model,
+                        profiles_dir,
+                        target,
+                        dbt_vars,
+                        warn_error_options,
+                        full_refresh,
+                    )
             client = bigquery_client(profile_output(project, profiles_dir, target))
-            base_bytes, base_columns = dry_run(client, sql["base"])
-            head_bytes, head_columns = dry_run(client, sql["head"])
+            with progress("Dry-run BASE"):
+                base_bytes, base_columns = dry_run(client, sql["base"])
+            with progress("Dry-run HEAD"):
+                head_bytes, head_columns = dry_run(client, sql["head"])
             columns, skipped = profile_columns(base_columns, head_columns)
             profile = None
             profile_note = "Profile not run; pass --execute to compare rows, nulls, distincts, and numeric sums."
             if execute:
                 query = profile_sql(sql["base"], sql["head"], columns)
-                profile_bytes, _schema = dry_run(client, query)
+                with progress("Dry-run profile"):
+                    profile_bytes, _schema = dry_run(client, query)
                 if profile_bytes > PROFILE_SCAN_LIMIT:
                     profile_note = f"Profile skipped: {format_bytes(profile_bytes)} exceeds {format_bytes(PROFILE_SCAN_LIMIT)} limit."
                 else:
-                    config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
-                    profile = {row["side"]: dict(row.items()) for row in client.query(query, job_config=config).result()}
+                    with progress("Execute aggregate profile"):
+                        config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
+                        profile = {row["side"]: dict(row.items()) for row in client.query(query, job_config=config).result()}
                     if set(profile) != {"base", "head"}:
                         raise RowRayError("BigQuery profile did not return both base and head rows")
             return report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note)

@@ -1,11 +1,13 @@
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
-from rowray.cli import RowRayError, compile_model, compiled_sql, profile_sql, report, resolve_env, run as run_command
+from rowray.cli import RowRayError, compile_model, compiled_sql, profile_sql, progress, report, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -58,6 +60,12 @@ class CliTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")
+
+        output = StringIO()
+        with patch("rowray.cli.time.monotonic", side_effect=[1.0, 2.0]), redirect_stdout(output):
+            with progress("Compile BASE"):
+                pass
+        self.assertEqual(output.getvalue(), "→ Compile BASE...\n✓ Compile BASE (1.0s)\n")
 
     @patch("rowray.cli.compiled_sql", return_value="select 1")
     @patch("rowray.cli.run")
