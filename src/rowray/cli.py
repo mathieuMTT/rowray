@@ -288,6 +288,26 @@ def column_moved(base: dict, head: dict, name: str, field_type: str) -> bool:
     return field_type in NUMERIC_TYPES and base[name + "__sum"] != head[name + "__sum"]
 
 
+def terminal_table(headers: tuple[str, ...], rows: list[tuple[str, ...]], right: set[int] | None = None) -> list[str]:
+    right = right or set()
+    widths = [max(len(headers[index]), *(len(row[index]) for row in rows)) for index in range(len(headers))]
+
+    def border(left: str, middle: str, end: str) -> str:
+        return left + middle.join("─" * (width + 2) for width in widths) + end
+
+    def line(row: tuple[str, ...]) -> str:
+        cells = [value.rjust(widths[index]) if index in right else value.ljust(widths[index]) for index, value in enumerate(row)]
+        return "│ " + " │ ".join(cells) + " │"
+
+    return [
+        border("┌", "┬", "┐"),
+        line(headers),
+        border("├", "┼", "┤"),
+        *(line(row) for row in rows),
+        border("└", "┴", "┘"),
+    ]
+
+
 def format_bytes(value: int) -> str:
     for unit in ("B", "KiB", "MiB", "GiB"):
         if value < 1024:
@@ -349,18 +369,19 @@ def report(
         moved = [(name, field_type) for name, field_type in columns if column_moved(base_row, head_row, name, field_type)]
         unchanged = [name for name, field_type in columns if not column_moved(base_row, head_row, name, field_type)]
         if moved:
-            lines.extend(["", "changes", "", "| column | nulls | distincts | sum |", "| --- | --- | --- | --- |"]) 
+            rows = []
             for name, field_type in moved:
                 nulls = (
                     f"{percentage(base_row[name + '__nulls'], base_row['n_rows'])} → "
                     f"{percentage(head_row[name + '__nulls'], head_row['n_rows'])}"
                 )
-                distincts = f"{int(base_row[name + '__distincts'])} → {int(head_row[name + '__distincts'])}"
+                distincts = f"{int(base_row[name + '__distincts']):,} → {int(head_row[name + '__distincts']):,}"
                 total = f"{base_row[name + '__sum']} → {head_row[name + '__sum']}" if field_type in NUMERIC_TYPES else ""
-                lines.append(f"| {name} | {nulls} | {distincts} | {total} |")
+                rows.append((name, nulls, distincts, total))
+            lines.extend(["", "Changed columns", *terminal_table(("Column", "Nulls", "Distincts", "Sum"), rows, {2, 3})])
         if unchanged:
-            lines.extend(["", "no change", "", "| column | distincts |", "| --- | --- |"]) 
-            lines.extend(f"| {name} | {int(head_row[name + '__distincts'])} |" for name in unchanged)
+            rows = [(name, f"{int(head_row[name + '__distincts']):,}") for name in unchanged]
+            lines.extend(["", "Unchanged columns", *terminal_table(("Column", "Distincts"), rows, {1})])
     lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; no model is built.")
     return "\n".join(lines)
 

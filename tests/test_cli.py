@@ -57,7 +57,7 @@ class CliTest(unittest.TestCase):
         }
         output = report(1, 1, [], [], [("amount", "INTEGER")], [], profile, "")
         self.assertIn("rows: 10 → 12 (+20.0%)", output)
-        self.assertIn("| amount | 10.0% → 0.0% | 4 → 5 | 100 → 120 |", output)
+        self.assertIn("│ amount │ 10.0% → 0.0% │     4 → 5 │ 100 → 120 │", output)
 
         with patch.dict("os.environ", {"BQ_PROJECT": "analytics"}):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")
