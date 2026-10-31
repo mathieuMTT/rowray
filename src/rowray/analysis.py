@@ -150,15 +150,32 @@ def report(
     skipped: list[str],
     profile: dict[str, dict] | None,
     profile_note: str,
+    full_refresh: tuple[int, int] | None = None,
 ) -> str:
     base_cost = base / 1024**4 * PRICE_PER_TIB
     head_cost = head / 1024**4 * PRICE_PER_TIB
-    lines = [
-        f"{'':12}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}",
-        f"{'Scan':12}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
-        f"{'Cost (USD)':12}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
-        "",
-    ]
+    width = 20 if full_refresh else 12
+    lines = [f"{'':{width}}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}"]
+    if full_refresh:
+        full_base, full_head = full_refresh
+        full_base_cost = full_base / 1024**4 * PRICE_PER_TIB
+        full_head_cost = full_head / 1024**4 * PRICE_PER_TIB
+        lines.extend(
+            [
+                f"{'Incremental scan':{width}}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
+                f"{'Incremental cost':{width}}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
+                f"{'Full-refresh scan':{width}}{format_bytes(full_base):>14}{format_bytes(full_head):>14}{format_delta(full_base, full_head):>14}",
+                f"{'Full-refresh cost':{width}}{f'${full_base_cost:.4f}':>14}{f'${full_head_cost:.4f}':>14}{f'${full_head_cost - full_base_cost:+.4f}':>14}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"{'Scan':{width}}{format_bytes(base):>14}{format_bytes(head):>14}{format_delta(base, head):>14}",
+                f"{'Cost (USD)':{width}}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
+            ]
+        )
+    lines.append("")
     added, removed, changed = schema_changes(
         [(name, field_type) for name, field_type, _mode in base_columns],
         [(name, field_type) for name, field_type, _mode in head_columns],

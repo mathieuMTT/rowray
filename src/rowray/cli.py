@@ -15,9 +15,14 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument("--base", metavar="REF", help="Git base ref; defaults to the origin default branch")
     diff.add_argument("--profiles-dir", type=Path, help="directory containing profiles.yml")
     diff.add_argument("--target", help="dbt target override")
-    diff.add_argument("--vars", dest="dbt_vars", metavar="YAML", help="dbt variables passed unchanged to both compiles")
+    diff.add_argument("--vars", dest="dbt_vars", metavar="YAML", help="dbt variables used for incremental compiles and full-refresh defaults")
     diff.add_argument("--warn-error-options", metavar="YAML", help="dbt warning options passed unchanged to both compiles")
-    diff.add_argument("--full-refresh", action="store_true", help="compile both versions with dbt full-refresh semantics")
+    diff.add_argument("--full-refresh", action="store_true", help="also estimate full-refresh scan cost for both versions")
+    diff.add_argument(
+        "--full-refresh-vars",
+        metavar="YAML",
+        help="variables merged over --vars for full-refresh compiles; requires --full-refresh",
+    )
     diff.add_argument("--execute", action="store_true", help="execute aggregate data profiles after a guarded dry run")
     diff.add_argument("--column", metavar="NAME", help="compare row counts per value; requires --execute")
     return result
@@ -37,6 +42,7 @@ def main() -> int:
                 args.full_refresh,
                 args.execute,
                 args.column,
+                args.full_refresh_vars,
             )
         )
         return 0

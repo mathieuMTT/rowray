@@ -165,9 +165,17 @@ def compile_model(
 
 
 def compile_refs(jobs: dict[str, tuple]) -> dict[str, str]:
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as executor:
         futures = {label: executor.submit(compile_model, *arguments) for label, arguments in jobs.items()}
         return {label: future.result() for label, future in futures.items()}
+
+
+def merge_vars(dbt_vars: str | None, overrides: str) -> str:
+    base = yaml.safe_load(dbt_vars) if dbt_vars else {}
+    extra = yaml.safe_load(overrides)
+    if not isinstance(base, dict) or not isinstance(extra, dict):
+        raise RowRayError("--vars and --full-refresh-vars must contain YAML mappings")
+    return yaml.safe_dump({**base, **extra}, default_flow_style=True).strip()
 
 
 def profile_output(project: Path, profiles_dir: Path, target: str | None) -> dict:
@@ -225,7 +233,11 @@ def compare(
     full_refresh: bool,
     execute: bool,
     column: str | None,
+    full_refresh_vars: str | None = None,
 ) -> str:
+    if full_refresh_vars and not full_refresh:
+        raise RowRayError("--full-refresh-vars requires --full-refresh")
+    full_vars = merge_vars(dbt_vars, full_refresh_vars) if full_refresh_vars else dbt_vars
     dbt = shutil.which("dbt")
     if not dbt:
         raise RowRayError("dbt not found; activate the environment used by this project")
@@ -245,18 +257,25 @@ def compare(
             base_worktree = temporary_path / "base"
             run(["git", "worktree", "add", "--detach", str(base_worktree), base], repo)
             worktrees.append(base_worktree)
+            base_project = base_worktree / relative_project
+            if (base_project / "packages.yml").is_file() or (base_project / "dependencies.yml").is_file():
+                common = ["--project-dir", str(base_project), "--profiles-dir", str(profiles_dir)]
+                if target:
+                    common += ["--target", target]
+                with progress("Install BASE dependencies"):
+                    run([dbt, "deps", *common], base_project)
             jobs = {
                 "base": (
                     dbt,
-                    base_worktree / relative_project,
+                    base_project,
                     temporary_path / "base-target",
                     model,
                     profiles_dir,
                     target,
                     dbt_vars,
                     warn_error_options,
-                    full_refresh,
-                    True,
+                    False,
+                    False,
                 ),
                 "head": (
                     dbt,
@@ -267,17 +286,54 @@ def compare(
                     target,
                     dbt_vars,
                     warn_error_options,
-                    full_refresh,
+                    False,
                     False,
                 ),
             }
-            with progress(f"Compile BASE ({base}) + working tree in parallel"):
+            if full_refresh:
+                jobs.update(
+                    {
+                        "full_base": (
+                            dbt,
+                            base_project,
+                            temporary_path / "full-base-target",
+                            model,
+                            profiles_dir,
+                            target,
+                            full_vars,
+                            warn_error_options,
+                            True,
+                            False,
+                        ),
+                        "full_head": (
+                            dbt,
+                            project,
+                            temporary_path / "full-head-target",
+                            model,
+                            profiles_dir,
+                            target,
+                            full_vars,
+                            warn_error_options,
+                            True,
+                            False,
+                        ),
+                    }
+                )
+            modes = "incremental + full refresh" if full_refresh else "incremental"
+            with progress(f"Compile {modes} for BASE ({base}) + working tree in parallel"):
                 sql = compile_refs(jobs)
             client = bigquery_client(profile_output(project, profiles_dir, target))
             with progress("Dry-run BASE"):
                 base_bytes, base_columns = dry_run(client, sql["base"])
             with progress("Dry-run working tree"):
                 head_bytes, head_columns = dry_run(client, sql["head"])
+            full_bytes = None
+            if full_refresh:
+                with progress("Dry-run full-refresh BASE"):
+                    full_base_bytes, _full_base_columns = dry_run(client, sql["full_base"])
+                with progress("Dry-run full-refresh working tree"):
+                    full_head_bytes, _full_head_columns = dry_run(client, sql["full_head"])
+                full_bytes = (full_base_bytes, full_head_bytes)
             columns, skipped = profile_columns(base_columns, head_columns)
             profile = None
             profile_note = "Profile not run; pass --execute to compare rows, nulls, distincts, and numeric sums."
@@ -313,7 +369,7 @@ def compare(
                     with progress(f"Analyze column {column}"):
                         config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
                         focus_rows = [dict(row.items()) for row in client.query(query, job_config=config).result()]
-            output = report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note)
+            output = report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note, full_bytes)
             return output + (f"\n\n{focus_report(column, focus_rows, focus_note)}" if column else "")
     finally:
         for worktree in reversed(worktrees):

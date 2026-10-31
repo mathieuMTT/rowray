@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rowray"
-version = "0.1.0"
+version = "0.2.0"
 description = "Compare dbt model data and scan cost against a Git base ref"
 readme = "README.md"
 authors = [{ name = "Mathieu Rozé" }]

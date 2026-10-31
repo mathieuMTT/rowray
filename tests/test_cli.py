@@ -8,8 +8,10 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
+import yaml
+
 from rowray.analysis import focus_report, focus_sql, profile_sql, report
-from rowray.compare import RowRayError, compare, compile_model, compile_refs, compiled_sql, progress, resolve_env, run as run_command
+from rowray.compare import RowRayError, compare, compile_model, compile_refs, compiled_sql, merge_vars, progress, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -47,6 +49,12 @@ class CliTest(unittest.TestCase):
         self.assertIn("added: new", output)
         self.assertIn("removed: old", output)
         self.assertIn("type changes: id INTEGER → STRING", output)
+
+        output = report(1024**3, 2 * 1024**3, [], [], [], [], None, "Profile not run", (3 * 1024**4, 4 * 1024**4))
+        self.assertIn("Incremental scan", output)
+        self.assertIn("Full-refresh scan", output)
+        self.assertIn("$18.7500", output)
+        self.assertIn("$25.0000", output)
 
         sql = profile_sql("select 1 as amount", "select 2 as amount", [("amount", "INTEGER")])
         self.assertIn("APPROX_COUNT_DISTINCT(`amount`)", sql)
@@ -123,7 +131,7 @@ class CliTest(unittest.TestCase):
 
     @patch("rowray.compare.compile_model")
     def test_compiles_refs_in_parallel(self, compile_model):
-        barrier = threading.Barrier(2)
+        barrier = threading.Barrier(4)
 
         def compile_ref(*arguments):
             barrier.wait(timeout=5)
@@ -131,8 +139,24 @@ class CliTest(unittest.TestCase):
 
         compile_model.side_effect = compile_ref
         arguments = ("dbt", Path("/base"), Path("/target"), "orders", Path("/profiles"), None, None, None, False, False)
-        result = compile_refs({"base": arguments, "head": arguments[:1] + (Path("/head"),) + arguments[2:]})
-        self.assertEqual(result, {"base": "/base", "head": "/head"})
+        result = compile_refs(
+            {
+                label: arguments[:1] + (Path(f"/{label}"),) + arguments[2:]
+                for label in ("base", "head", "full_base", "full_head")
+            }
+        )
+        self.assertEqual(result, {label: f"/{label}" for label in ("base", "head", "full_base", "full_head")})
+
+    def test_merges_full_refresh_vars(self):
+        merged = merge_vars('{"execution_date":"2026-09-29","inception_date":"2026-09-23","is_backfill":false}', '{"inception_date":"2019-10-23","is_backfill":true}')
+        self.assertEqual(
+            yaml.safe_load(merged),
+            {"execution_date": "2026-09-29", "inception_date": "2019-10-23", "is_backfill": True},
+        )
+        with self.assertRaisesRegex(RowRayError, "YAML mappings"):
+            merge_vars(None, "[not, a, mapping]")
+        with self.assertRaisesRegex(RowRayError, "requires --full-refresh"):
+            compare("orders", "origin/main", None, None, None, None, False, False, None, "{day: 1}")
 
     @patch("rowray.compare.subprocess.run", return_value=CompletedProcess([], 1, "dbt error", "dependency warning"))
     def test_reports_dbt_error_before_warnings(self, _subprocess_run):
