@@ -7,7 +7,7 @@ import sys
 import tempfile
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -164,9 +164,52 @@ def compile_model(
     return compiled_sql(target_path, model)
 
 
-def compile_refs(jobs: dict[str, tuple]) -> dict[str, str]:
+def parallel_results(futures: dict[str, Future], labels: dict[str, str]) -> dict[str, str]:
+    started = time.monotonic()
+    completed: dict[str, float] = {}
+    animated = sys.stdout.isatty()
+    future_labels = {future: label for label, future in futures.items()}
+
+    if not animated:
+        for label in futures:
+            print(f"→ {labels[label]}...", flush=True)
+        for future in as_completed(future_labels):
+            label = future_labels[future]
+            completed[label] = time.monotonic() - started
+            prefix = "✗" if future.exception() else "✓"
+            print(f"{prefix} {labels[label]} ({completed[label]:.1f}s)", flush=True)
+    else:
+        frame = 0
+        rendered = False
+        while True:
+            if rendered:
+                print(f"\033[{len(futures)}A", end="")
+            lines = []
+            for label, future in futures.items():
+                if label in completed:
+                    prefix = "✗" if future.exception() else "✓"
+                    lines.append(f"{prefix} {labels[label]} ({completed[label]:.1f}s)")
+                else:
+                    spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[frame % 10]
+                    lines.append(f"{spinner} {labels[label]} ({time.monotonic() - started:.0f}s)")
+            print("\n".join(f"\r\033[2K{line}" for line in lines), flush=True)
+            rendered = True
+            frame += 1
+            if len(completed) == len(futures):
+                break
+            pending = {future for label, future in futures.items() if label not in completed}
+            done, _pending = wait(pending, timeout=0.25, return_when=FIRST_COMPLETED)
+            for future in done:
+                completed[future_labels[future]] = time.monotonic() - started
+
+    return {label: future.result() for label, future in futures.items()}
+
+
+def compile_refs(jobs: dict[str, tuple], labels: dict[str, str] | None = None) -> dict[str, str]:
     with ThreadPoolExecutor(max_workers=min(4, len(jobs))) as executor:
         futures = {label: executor.submit(compile_model, *arguments) for label, arguments in jobs.items()}
+        if labels:
+            return parallel_results(futures, labels)
         return {label: future.result() for label, future in futures.items()}
 
 
@@ -320,9 +363,18 @@ def compare(
                         ),
                     }
                 )
-            modes = "incremental + full refresh" if full_refresh else "incremental"
-            with progress(f"Compile {modes} for BASE ({base}) + working tree in parallel"):
-                sql = compile_refs(jobs)
+            labels = {
+                "base": f"Compile incremental BASE ({base})",
+                "head": "Compile incremental WORKTREE",
+            }
+            if full_refresh:
+                labels.update(
+                    {
+                        "full_base": f"Compile full-refresh BASE ({base})",
+                        "full_head": "Compile full-refresh WORKTREE",
+                    }
+                )
+            sql = compile_refs(jobs, labels)
             client = bigquery_client(profile_output(project, profiles_dir, target), execution_project)
             with progress("Dry-run BASE"):
                 base_bytes, base_columns = dry_run(client, sql["base"])
@@ -337,23 +389,23 @@ def compare(
                 full_bytes = (full_base_bytes, full_head_bytes)
             columns, skipped = profile_columns(base_columns, head_columns)
             profile = None
-            profile_note = "Profile not run; pass --execute to compare rows, nulls, distincts, and numeric sums."
+            profile_note = "Data comparison not run; pass --execute to compare rows, nulls, distincts, and numeric sums."
             focus_rows = None
             focus_note = None
             if column and not execute:
                 raise RowRayError("--column requires --execute because value counts run a BigQuery query")
             if execute:
                 query = profile_sql(sql["base"], sql["head"], columns)
-                with progress("Dry-run profile"):
+                with progress("Dry-run incremental data comparison"):
                     profile_bytes, _schema = dry_run(client, query)
                 if profile_bytes > PROFILE_SCAN_LIMIT:
-                    profile_note = f"Profile skipped: {format_bytes(profile_bytes)} exceeds {format_bytes(PROFILE_SCAN_LIMIT)} limit."
+                    profile_note = f"Data comparison skipped: {format_bytes(profile_bytes)} exceeds {format_bytes(PROFILE_SCAN_LIMIT)} limit."
                 else:
-                    with progress("Execute aggregate profile"):
+                    with progress("Run incremental data comparison"):
                         config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
                         profile = {row["side"]: dict(row.items()) for row in client.query(query, job_config=config).result()}
                     if set(profile) != {"base", "head"}:
-                        raise RowRayError("BigQuery profile did not return both base and head rows")
+                        raise RowRayError("BigQuery data comparison did not return both base and head rows")
             if column:
                 base_by_name = {name: (field_type, mode) for name, field_type, mode in base_columns}
                 head_by_name = {name: (field_type, mode) for name, field_type, mode in head_columns}

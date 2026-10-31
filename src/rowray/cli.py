@@ -39,7 +39,7 @@ def parser() -> argparse.ArgumentParser:
         metavar="YAML",
         help="variables merged over --vars for full-refresh compiles; requires --full-refresh",
     )
-    diff.add_argument("--execute", action="store_true", help="execute aggregate data profiles after a guarded dry run")
+    diff.add_argument("--execute", action="store_true", help="run incremental data comparison after a guarded dry run")
     diff.add_argument("--column", metavar="NAME", help="compare row counts per value; requires --execute")
     return result
 

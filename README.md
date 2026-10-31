@@ -105,9 +105,9 @@ rowray diff \
   --full-refresh-vars '{"inception_date":"2019-10-23","is_backfill":true}'
 ```
 
-## Compare aggregate data
+## Compare incremental data
 
-Aggregate profiling requires explicit execution:
+Comparing rows and column metrics requires explicit execution:
 
 ```bash
 rowray diff --select my_model --execute
@@ -128,7 +128,7 @@ rowray diff --select my_model --execute --column page_type
 - BigQuery comparisons are dry-run only unless `--execute` is passed.
 - `--execution-project` changes where RowRay submits BigQuery jobs, not which datasets the compiled SQL reads.
 - `--full-refresh` runs incremental and full-refresh compiles together; full-refresh SQL is dry-run only.
-- `--execute` and `--column` profile only the incremental SQL, never the full-refresh SQL.
+- `--execute` and `--column` compare only the incremental SQL, never the full-refresh SQL.
 - Each aggregate query is dry-run first and skipped above 200 GiB.
 - Each executed aggregate query also sets `maximum_bytes_billed` to 200 GiB.
 - `--column` runs an additional aggregate query with its own 200 GiB cap.
@@ -149,7 +149,7 @@ bytes processed / 1024⁴ × $6.25
 - BigQuery only
 - Top-level schema comparison only
 - Schema comparison checks column names and types, not `NULLABLE`/`REQUIRED` mode changes
-- Aggregate profiles skip repeated, nested, `GEOGRAPHY`, and `JSON` columns
+- Data comparison skips repeated, nested, `GEOGRAPHY`, and `JSON` columns
 - Distinct counts use `APPROX_COUNT_DISTINCT`
 - `--column` returns every value without an output limit
 - The current project must already have its dbt dependencies installed; RowRay installs dependencies only in the BASE worktree

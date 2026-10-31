@@ -155,13 +155,20 @@ class CliTest(unittest.TestCase):
 
         compile_model.side_effect = compile_ref
         arguments = ("dbt", Path("/base"), Path("/target"), "orders", Path("/profiles"), None, None, None, False, False)
-        result = compile_refs(
-            {
-                label: arguments[:1] + (Path(f"/{label}"),) + arguments[2:]
-                for label in ("base", "head", "full_base", "full_head")
-            }
-        )
-        self.assertEqual(result, {label: f"/{label}" for label in ("base", "head", "full_base", "full_head")})
+        labels = {label: f"Compile {label}" for label in ("base", "head", "full_base", "full_head")}
+        output = StringIO()
+        with redirect_stdout(output):
+            result = compile_refs(
+                {
+                    label: arguments[:1] + (Path(f"/{label}"),) + arguments[2:]
+                    for label in labels
+                },
+                labels,
+            )
+        self.assertEqual(result, {label: f"/{label}" for label in labels})
+        for label in labels:
+            self.assertIn(f"→ Compile {label}...", output.getvalue())
+            self.assertIn(f"✓ Compile {label}", output.getvalue())
 
     def test_merges_full_refresh_vars(self):
         merged = merge_vars('{"execution_date":"2026-09-29","inception_date":"2026-09-23","is_backfill":false}', '{"inception_date":"2019-10-23","is_backfill":true}')
