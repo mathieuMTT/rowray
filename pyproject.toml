@@ -10,6 +10,14 @@ readme = "README.md"
 authors = [{ name = "Mathieu Rozé" }]
 license = "Apache-2.0"
 requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
 dependencies = [
   "google-cloud-bigquery>=3,<4",
   "pyyaml>=6,<7",
