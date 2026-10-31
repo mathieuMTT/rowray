@@ -8,7 +8,8 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
-from rowray.cli import RowRayError, compile_model, compile_refs, compiled_sql, focus_report, focus_sql, profile_sql, progress, report, resolve_env, run as run_command
+from rowray.analysis import focus_report, focus_sql, profile_sql, report
+from rowray.compare import RowRayError, compare, compile_model, compile_refs, compiled_sql, progress, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
@@ -75,13 +76,13 @@ class CliTest(unittest.TestCase):
             self.assertEqual(resolve_env("{{ env_var('BQ_PROJECT') }}"), "analytics")
 
         output = StringIO()
-        with patch("rowray.cli.time.monotonic", side_effect=[1.0, 2.0]), redirect_stdout(output):
+        with patch("rowray.compare.time.monotonic", side_effect=[1.0, 2.0]), redirect_stdout(output):
             with progress("Compile BASE"):
                 pass
         self.assertEqual(output.getvalue(), "→ Compile BASE...\n✓ Compile BASE (1.0s)\n")
 
-    @patch("rowray.cli.compiled_sql", return_value="select 1")
-    @patch("rowray.cli.run")
+    @patch("rowray.compare.compiled_sql", return_value="select 1")
+    @patch("rowray.compare.run")
     def test_passes_options_to_dbt_compile(self, run, _compiled_sql):
         project = Path("/project")
         compile_model(
@@ -120,7 +121,7 @@ class CliTest(unittest.TestCase):
             ),
         )
 
-    @patch("rowray.cli.compile_model")
+    @patch("rowray.compare.compile_model")
     def test_compiles_refs_in_parallel(self, compile_model):
         barrier = threading.Barrier(2)
 
@@ -133,11 +134,26 @@ class CliTest(unittest.TestCase):
         result = compile_refs({"base": arguments, "head": arguments[:1] + (Path("/head"),) + arguments[2:]})
         self.assertEqual(result, {"base": "/base", "head": "/head"})
 
-    @patch("rowray.cli.subprocess.run", return_value=CompletedProcess([], 1, "dbt error", "dependency warning"))
+    @patch("rowray.compare.subprocess.run", return_value=CompletedProcess([], 1, "dbt error", "dependency warning"))
     def test_reports_dbt_error_before_warnings(self, _subprocess_run):
         with self.assertRaises(RowRayError) as context:
             run_command(["dbt", "compile"], Path("/project"))
         self.assertLess(str(context.exception).index("dbt error"), str(context.exception).index("dependency warning"))
+
+    def test_removes_base_worktree_when_compile_fails(self):
+        with (
+            patch("rowray.compare.shutil.which", return_value="/usr/bin/dbt"),
+            patch("rowray.compare.find_project", return_value=Path("/repo/dbt")),
+            patch("rowray.compare.find_profiles", return_value=Path("/profiles")),
+            patch("rowray.compare.run", return_value="/repo"),
+            patch("rowray.compare.compile_refs", side_effect=RowRayError("compile failed")),
+            patch("rowray.compare.subprocess.run") as subprocess_run,
+            redirect_stdout(StringIO()),
+        ):
+            with self.assertRaisesRegex(RowRayError, "compile failed"):
+                compare("orders", "origin/main", None, None, None, None, False, False, None)
+
+        self.assertEqual(subprocess_run.call_args.args[0][:4], ["git", "worktree", "remove", "--force"])
 
 
 if __name__ == "__main__":
