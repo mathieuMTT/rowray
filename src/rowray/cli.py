@@ -19,7 +19,7 @@ def format_google_error(error: GoogleAPICallError) -> str:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="rowray", description="Compare one dbt model against a Git base ref")
+    result = argparse.ArgumentParser(prog="rowray", description="Compare one dbt model between a Git base ref and the current working tree")
     subcommands = result.add_subparsers(dest="command", required=True)
     diff = subcommands.add_parser("diff", help="compare BASE with the current working tree")
     diff.add_argument("--select", required=True, metavar="MODEL", help="one dbt model name")
@@ -29,7 +29,7 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument(
         "--execution-project",
         metavar="PROJECT",
-        help="BigQuery project for RowRay jobs; overrides execution_project from the target",
+        help="BigQuery project for RowRay jobs; does not change the dbt target",
     )
     diff.add_argument("--vars", dest="dbt_vars", metavar="YAML", help="dbt variables used for incremental compiles and full-refresh defaults")
     diff.add_argument("--warn-error-options", metavar="YAML", help="dbt warning options passed unchanged to all compiles")
@@ -37,10 +37,10 @@ def parser() -> argparse.ArgumentParser:
     diff.add_argument(
         "--full-refresh-vars",
         metavar="YAML",
-        help="variables merged over --vars for full-refresh compiles; requires --full-refresh",
+        help="top-level variables merged over --vars for full-refresh compiles; requires --full-refresh",
     )
-    diff.add_argument("--execute", action="store_true", help="run incremental data comparison after a guarded dry run")
-    diff.add_argument("--column", metavar="NAME", help="compare row counts per value; requires --execute")
+    diff.add_argument("--execute", action="store_true", help="run the potentially billed incremental data comparison after a dry run")
+    diff.add_argument("--column", metavar="NAME", help="compare actual row counts per value; requires --execute")
     return result
 
 

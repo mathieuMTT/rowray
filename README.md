@@ -19,6 +19,20 @@ With `--execute`, RowRay runs guarded aggregate queries and also reports:
 
 With `--column NAME`, it adds BASE and working-tree row counts plus percentage variation for every value in one column.
 
+## How it runs
+
+| Stage | What happens in BigQuery | Potentially billed |
+| --- | --- | --- |
+| `dbt compile` | dbt may run metadata lookups or project macros | Project-dependent |
+| `Dry-run BASE/WORKTREE` | Validates incremental SQL and estimates schema, scan, and cost | No |
+| `Dry-run full-refresh BASE/WORKTREE` | Estimates full-refresh SQL when `--full-refresh` is passed | No |
+| `Dry-run incremental data comparison` | Validates the combined comparison query and enforces the 200 GiB limit | No |
+| `Run incremental data comparison` | Reads BASE and WORKTREE to calculate rows and column metrics | Yes |
+| `Dry-run column NAME` | Validates the value-count query and enforces its own 200 GiB limit | No |
+| `Analyze column NAME` | Counts rows for every value of the selected column | Yes |
+
+RowRay never runs a dbt materialization, `MERGE`, or full-refresh build. Only `--execute` and `--column` cause RowRay itself to execute data-reading queries.
+
 ## Requirements
 
 - Python 3.10+
@@ -73,12 +87,22 @@ rowray diff --select my_model --target prod --execution-project my-dev-project
 
 `--execution-project` overrides `execution_project` from the selected profile output, which otherwise falls back to its `project`. It affects RowRay dry runs and aggregate queries; dbt compilation still uses `--target`.
 
+The effective project is selected in this order:
+
+```text
+--execution-project
+→ execution_project from the selected profiles.yml output
+→ project from the selected profiles.yml output
+```
+
+A common read-only production setup grants `roles/bigquery.dataViewer` on the referenced production datasets and `roles/bigquery.jobUser` on the execution project. BigQuery dry runs are free, but still require `bigquery.jobs.create` in that execution project.
+
 Pass required dbt variables as YAML or JSON. Identical values are used for BASE and the working tree:
 
 ```bash
 rowray diff \
   --select my_model \
-  --vars '{"execution_date":"2026-10-29","is_backfill":false}'
+  --vars '{"execution_date":"2026-10-29"}'
 ```
 
 Forward dbt warning handling when the project promotes warnings to errors:
@@ -95,15 +119,26 @@ Add full-refresh scan estimates for BASE and the working tree. This runs two ext
 rowray diff --select my_model --full-refresh
 ```
 
-By default, full-refresh compiles reuse `--vars`. Override only the values that differ by merging `--full-refresh-vars` over them:
+By default, full-refresh compiles reuse `--vars`. Override only the values that differ by merging the top-level keys from `--full-refresh-vars` over them:
 
 ```bash
 rowray diff \
   --select my_model \
-  --vars '{"execution_date":"2026-09-29","inception_date":"2026-09-23","is_backfill":false}' \
+  --vars '{"execution_date":"2026-09-29","inception_date":"2026-09-23"}' \
   --full-refresh \
-  --full-refresh-vars '{"inception_date":"2019-10-23","is_backfill":true}'
+  --full-refresh-vars '{"inception_date":"2019-10-23"}'
 ```
+
+With `--full-refresh`, RowRay runs four compiles concurrently and displays their progress independently:
+
+```text
+⠋ Compile incremental BASE (origin/main)
+⠙ Compile incremental WORKTREE
+⠹ Compile full-refresh BASE (origin/main)
+⠸ Compile full-refresh WORKTREE
+```
+
+If BASE declares `packages.yml` or `dependencies.yml`, RowRay first runs `dbt deps` in its temporary worktree because local `dbt_packages/` directories are normally ignored by Git.
 
 ## Compare incremental data
 
@@ -116,15 +151,32 @@ rowray diff --select my_model --execute
 Analyze counts and variation for every value of one shared scalar column:
 
 ```bash
-rowray diff --select my_model --execute --column page_type
+rowray diff --select my_model --execute --column event_type
 ```
 
 `--column` prints actual distinct values. Do not use it on sensitive or very high-cardinality columns unless that terminal output is acceptable.
 
+## Complete example
+
+```bash
+rowray diff \
+  --select mart_traffic__fact_event \
+  --target prod \
+  --execution-project data-dev \
+  --vars '{"execution_date":"2026-10-29","inception_date":"2026-10-23"}' \
+  --full-refresh \
+  --full-refresh-vars '{"inception_date":"2019-01-01"}' \
+  --warn-error-options '{"silence":["CustomKeyInConfigDeprecation"]}' \
+  --execute \
+  --column event_type
+```
+
+This estimates incremental and full-refresh scan costs for BASE and WORKTREE. It executes only the incremental row/column comparison and the requested `event_type` value counts.
+
 ## Execution and cost safety
 
 - BASE compiles in an isolated Git worktree.
-- The current dbt project compiles concurrently with all local changes and an isolated target directory.
+- BASE and the current dbt project compile concurrently with isolated target directories; the current project includes committed, staged, unstaged, and untracked changes.
 - BigQuery comparisons are dry-run only unless `--execute` is passed.
 - `--execution-project` changes where RowRay submits BigQuery jobs, not which datasets the compiled SQL reads.
 - `--full-refresh` runs incremental and full-refresh compiles together; full-refresh SQL is dry-run only.
@@ -134,6 +186,8 @@ rowray diff --select my_model --execute --column page_type
 - `--column` runs an additional aggregate query with its own 200 GiB cap.
 - Raw rows are not downloaded, but `--column` downloads distinct values and their counts.
 - dbt compilation may run warehouse introspection or project macros such as `run_query`; RowRay cannot make arbitrary dbt projects query-free.
+
+The scan/cost table estimates the compiled model SQL for each side. It does not include any warehouse activity triggered by project-specific dbt macros or the potentially billed queries run by `--execute` and `--column`.
 
 The displayed USD amount is an estimate:
 
@@ -152,6 +206,7 @@ bytes processed / 1024⁴ × $6.25
 - Data comparison skips repeated, nested, `GEOGRAPHY`, and `JSON` columns
 - Distinct counts use `APPROX_COUNT_DISTINCT`
 - `--column` returns every value without an output limit
+- `--full-refresh-vars` performs a shallow merge; overriding a nested mapping replaces that complete top-level value
 - The current project must already have its dbt dependencies installed; RowRay installs dependencies only in the BASE worktree
 
 ## Update or remove
