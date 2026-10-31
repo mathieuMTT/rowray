@@ -65,6 +65,14 @@ The Git base defaults to `origin/HEAD`, then `origin/main`, then `origin/master`
 rowray diff --select my_model --base origin/main --target dev
 ```
 
+Compile against a production target while submitting RowRay's BigQuery jobs from a project where you have `bigquery.jobs.create`:
+
+```bash
+rowray diff --select my_model --target prod --execution-project my-dev-project
+```
+
+`--execution-project` overrides `execution_project` from the selected profile output, which otherwise falls back to its `project`. It affects RowRay dry runs and aggregate queries; dbt compilation still uses `--target`.
+
 Pass required dbt variables as YAML or JSON. Identical values are used for BASE and the working tree:
 
 ```bash
@@ -118,6 +126,7 @@ rowray diff --select my_model --execute --column page_type
 - BASE compiles in an isolated Git worktree.
 - The current dbt project compiles concurrently with all local changes and an isolated target directory.
 - BigQuery comparisons are dry-run only unless `--execute` is passed.
+- `--execution-project` changes where RowRay submits BigQuery jobs, not which datasets the compiled SQL reads.
 - `--full-refresh` runs incremental and full-refresh compiles together; full-refresh SQL is dry-run only.
 - `--execute` and `--column` profile only the incremental SQL, never the full-refresh SQL.
 - Each aggregate query is dry-run first and skipped above 200 GiB.

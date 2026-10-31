@@ -199,8 +199,8 @@ def profile_output(project: Path, profiles_dir: Path, target: str | None) -> dic
     return output
 
 
-def bigquery_client(output: dict) -> bigquery.Client:
-    project = resolve_env(output.get("execution_project") or output.get("project")) or None
+def bigquery_client(output: dict, execution_project: str | None = None) -> bigquery.Client:
+    project = execution_project or resolve_env(output.get("execution_project") or output.get("project")) or None
     method = output.get("method")
     if method == "service-account":
         keyfile = resolve_env(output.get("keyfile"))
@@ -234,6 +234,7 @@ def compare(
     execute: bool,
     column: str | None,
     full_refresh_vars: str | None = None,
+    execution_project: str | None = None,
 ) -> str:
     if full_refresh_vars and not full_refresh:
         raise RowRayError("--full-refresh-vars requires --full-refresh")
@@ -322,7 +323,7 @@ def compare(
             modes = "incremental + full refresh" if full_refresh else "incremental"
             with progress(f"Compile {modes} for BASE ({base}) + working tree in parallel"):
                 sql = compile_refs(jobs)
-            client = bigquery_client(profile_output(project, profiles_dir, target))
+            client = bigquery_client(profile_output(project, profiles_dir, target), execution_project)
             with progress("Dry-run BASE"):
                 base_bytes, base_columns = dry_run(client, sql["base"])
             with progress("Dry-run working tree"):

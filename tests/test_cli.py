@@ -9,12 +9,28 @@ from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
 import yaml
+from google.api_core.exceptions import Forbidden
 
 from rowray.analysis import focus_report, focus_sql, profile_sql, report
-from rowray.compare import RowRayError, compare, compile_model, compile_refs, compiled_sql, merge_vars, progress, resolve_env, run as run_command
+from rowray.cli import format_google_error
+from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, merge_vars, progress, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
+    def test_formats_bigquery_permission_error(self):
+        error = Forbidden(
+            "Access Denied: Project vp-data-prod: User does not have bigquery.jobs.create permission in project vp-data-prod."
+        )
+        self.assertEqual(
+            format_google_error(error),
+            "cannot create BigQuery jobs in vp-data-prod; pass --execution-project PROJECT",
+        )
+
+    @patch("rowray.compare.bigquery.Client")
+    def test_overrides_bigquery_execution_project(self, client):
+        bigquery_client({"method": "oauth", "project": "vp-data-prod"}, "vp-data-dev")
+        client.assert_called_once_with(project="vp-data-dev")
+
     def test_reads_model_and_renders_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
