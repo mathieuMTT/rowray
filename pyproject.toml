@@ -7,6 +7,8 @@ name = "rowray"
 version = "0.1.0"
 description = "Compare dbt model data and scan cost against a Git base ref"
 readme = "README.md"
+authors = [{ name = "Mathieu Rozé" }]
+license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
   "google-cloud-bigquery>=3,<4",

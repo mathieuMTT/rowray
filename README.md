@@ -140,4 +140,8 @@ uv tool upgrade rowray
 uv tool uninstall rowray
 ```
 
-See [ROADMAP.md](ROADMAP.md) for planned stages.
+## License
+
+Copyright 2026 Mathieu Rozé.
+
+Licensed under the [Apache License 2.0](LICENSE).
