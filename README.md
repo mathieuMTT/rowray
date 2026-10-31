@@ -1,4 +1,6 @@
-<h1 align="center">RowRay</h1>
+<h1 align="center">
+  <a href="https://github.com/mathieuMTT/rowray"><img alt="RowRay" src="https://raw.githubusercontent.com/mathieuMTT/rowray/main/assets/rowray-logo.svg" width="560"></a>
+</h1>
 
 <p align="center"><strong>See what changed. Know what it costs. Ship dbt with confidence.</strong></p>
 

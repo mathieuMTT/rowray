@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1920 1080">
+  <defs>
+    <style>
+      .cls-1{font-family:&apos;FORCED SQUARE&apos;, sans-serif;font-size:100px;font-weight:500;fill:#ffffff;letter-spacing:-5.5px}
+      .cls-2{font-family:&apos;FORCED SQUARE&apos;, sans-serif;font-size:264px;font-weight:500;fill:#52debf}
+      .cls-3{font-family:&apos;JetBrains Mono&apos;, monospace;font-size:41.859px;fill:#52debf;letter-spacing:1.633px}
+    </style>
+  </defs>
+  <title>Artboard 1</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g>
+      <g>
+        <g>
+          <text transform="matrix(2.644 0 0 2.644 423.425 570.21)" x="0" y="0" xml:space="preserve" class="cls-1"><tspan x="0" y="0">ROWRAY</tspan></text>
+          <g>
+            <text transform="matrix(0.702 0 0 0.702 1358.95 570.406)" x="0" y="0" xml:space="preserve" class="cls-2"><tspan x="0" y="0">&gt;</tspan></text>
+            <text transform="matrix(0.536 0 0 0.536 1415.986 550.555)" x="0" y="0" xml:space="preserve" class="cls-2"><tspan x="0" y="0">_</tspan></text>
+          </g>
+        </g>
+      </g>
+      <text transform="matrix(1.194 0 0 1.194 423.073 654.214)" x="0" y="0" xml:space="preserve" class="cls-3"><tspan x="0" y="0" textLength="756.61" lengthAdjust="spacingAndGlyphs">Analytics Engineering CLI</tspan></text>
+    </g>
+  </g>
+</svg>
