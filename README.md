@@ -1,6 +1,13 @@
-# RowRay
+<h1 align="center">RowRay</h1>
 
-> **See what changed. Know what it costs. Ship dbt with confidence.**
+<p align="center"><strong>See what changed. Know what it costs. Ship dbt with confidence.</strong></p>
+
+<p align="center">
+  <a href="https://pypi.org/project/rowray/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/rowray?style=flat-square&amp;logo=pypi&amp;logoColor=white"></a>
+  <a href="https://pypi.org/project/rowray/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/rowray?style=flat-square&amp;logo=python&amp;logoColor=white"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/pypi/l/rowray?style=flat-square"></a>
+  <a href="https://github.com/mathieuMTT/rowray/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mathieuMTT/rowray?style=flat-square&amp;logo=github"></a>
+</p>
 
 RowRay gives your dbt models X-ray vision.
 
