@@ -1,6 +1,16 @@
 # RowRay
 
-RowRay compares one dbt model from a Git base ref with the current working tree, including committed, staged, unstaged, and untracked changes. It targets dbt projects using BigQuery and never materializes the model.
+> **See what changed. Know what it costs. Ship dbt with confidence.**
+
+RowRay gives your dbt models X-ray vision.
+
+Compare Git BASE against your current working tree for schema drift, data shifts, and BigQuery scan cost—without materializing a model.
+
+**Built for analytics engineers using dbt + BigQuery.**
+
+- 🔬 Catch schema and data changes before production
+- 💸 Compare incremental and full-refresh scan costs
+- ⚡ Test committed, staged, unstaged, and untracked work
 
 ## What it compares
 

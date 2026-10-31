@@ -19,7 +19,7 @@ def format_google_error(error: GoogleAPICallError) -> str:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="rowray", description="Compare one dbt model between a Git base ref and the current working tree")
+    result = argparse.ArgumentParser(prog="rowray", description="X-ray dbt changes for schema drift, data shifts, and BigQuery scan cost")
     subcommands = result.add_subparsers(dest="command", required=True)
     diff = subcommands.add_parser("diff", help="compare BASE with the current working tree")
     diff.add_argument("--select", required=True, metavar="MODEL", help="one dbt model name")
