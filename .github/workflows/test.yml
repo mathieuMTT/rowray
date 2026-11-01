@@ -18,6 +18,7 @@ jobs:
   compatibility:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         dbt: [v1, v2]
     steps:

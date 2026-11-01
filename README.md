@@ -302,7 +302,7 @@ GitHub Actions runs the unit suite plus real compile smoke tests with dbt 1.10.2
 
 ## Test against dbt v1 and v2
 
-The repository includes an isolated compatibility harness. It installs dbt Core 1.10.23 with dbt-bigquery 1.10.3 and dbt 2.0.9 into separate ignored virtual environments, so no global dbt installation is needed and neither runtime is installed into RowRay's own environment:
+The repository includes an isolated compatibility harness. It installs dbt Core 1.10.23 with dbt-bigquery 1.10.3 and dbt 2.0.9 into separate Python 3.12 virtual environments. Python 3.12 is pinned because dbt Core 1.10 does not support Python 3.14. No global dbt installation is needed and neither runtime is installed into RowRay's own environment:
 
 ```bash
 uv sync --locked

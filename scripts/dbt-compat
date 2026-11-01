@@ -12,12 +12,14 @@ SANDBOX = ROOT / ".sandbox"
 REPOSITORY = "https://github.com/dbt-labs/jaffle-shop.git"
 VERSIONS = {
     "v1": {
+        "python": "3.12",
         "packages": ("dbt-core==1.10.23", "dbt-bigquery==1.10.3"),
         "branch": "jaffle-shop-old",
         "commit": "dd011b41f1bbfe83a561ec084b67d1063c299e46",
         "dataset": "ROWRAY_BQ_DATASET_V1",
     },
     "v2": {
+        "python": "3.12",
         "packages": ("dbt==2.0.9",),
         "branch": "main",
         "commit": "5beb145b00f5465ec759cfcdd9745e858818cf95",
@@ -59,7 +61,7 @@ def setup(version: str | None) -> None:
     for item in versions:
         path = runtime_path(item)
         path.parent.mkdir(parents=True, exist_ok=True)
-        checked(["uv", "venv", str(path)])
+        checked(["uv", "venv", "--python", VERSIONS[item]["python"], str(path)])
         environment = ssl_environment() if item == "v2" else None
         checked(
             ["uv", "pip", "install", "--python", str(path / "bin" / "python"), *VERSIONS[item]["packages"]],

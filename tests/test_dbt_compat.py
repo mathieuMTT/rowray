@@ -37,6 +37,13 @@ class DbtCompatibilityTest(unittest.TestCase):
             check=True,
         ).stdout.strip()
         self.assertEqual(version, "1.10.23" if DBT_COMPAT == "v1" else "2.0.9")
+        python_version = subprocess.run(
+            [python, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        self.assertEqual(python_version, "3.12")
 
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "project"
