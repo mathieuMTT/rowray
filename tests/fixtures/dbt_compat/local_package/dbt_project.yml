@@ -1,0 +1,4 @@
+name: rowray_test_package
+version: 1.0.0
+config-version: 2
+macro-paths: ["macros"]

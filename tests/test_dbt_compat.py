@@ -48,6 +48,13 @@ class DbtCompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "project"
             shutil.copytree(FIXTURE, project)
+            profiles = project / "profiles" / DBT_COMPAT
+            subprocess.run(
+                ["dbt", "deps", "--project-dir", project, "--profiles-dir", profiles],
+                cwd=project,
+                check=True,
+            )
+            self.assertTrue((project / "dbt_packages" / "rowray_test_package").is_dir())
             subprocess.run(["git", "init", "-q"], cwd=project, check=True)
             subprocess.run(["git", "add", "."], cwd=project, check=True)
             subprocess.run(
@@ -64,9 +71,13 @@ class DbtCompatibilityTest(unittest.TestCase):
                 cwd=project,
                 check=True,
             )
-            (project / "models" / "example.sql").write_text("select 1 as id, 'rowray' as name\n")
+            model = project / "models" / "example.sql"
+            model.write_text(model.read_text().replace(" as load_mode\n", " as load_mode,\n  'rowray' as name\n"))
+
+            compiled_sql = []
 
             def dry_run(_client, sql):
+                compiled_sql.append(sql)
                 columns = [("id", "INTEGER", "NULLABLE")]
                 if "as name" in sql:
                     columns.append(("name", "STRING", "NULLABLE"))
@@ -81,16 +92,23 @@ class DbtCompatibilityTest(unittest.TestCase):
                 output = compare(
                     "example",
                     "HEAD",
-                    project / "profiles" / DBT_COMPAT,
+                    profiles,
                     None,
+                    '{"label":"incremental-var","shared":"base"}',
                     None,
-                    None,
+                    True,
                     False,
-                    False,
                     None,
+                    '{"label":"full-refresh-var"}',
                 )
 
         self.assertIn("added: name", output)
+        self.assertIn("Full-refresh scan", output)
+        self.assertEqual(len(compiled_sql), 4)
+        self.assertEqual(sum("'incremental-var' as label" in sql for sql in compiled_sql), 2)
+        self.assertEqual(sum("'full-refresh-var' as label" in sql for sql in compiled_sql), 2)
+        self.assertEqual(sum("'incremental' as load_mode" in sql for sql in compiled_sql), 2)
+        self.assertEqual(sum("'full-refresh' as load_mode" in sql for sql in compiled_sql), 2)
 
 
 if __name__ == "__main__":

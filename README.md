@@ -298,7 +298,7 @@ uv run --locked rowray diff --help
 
 Before opening a pull request, keep changes focused, add tests for new branching or error handling, and update both the CLI help and this README for user-facing behavior. Run `uv build --no-sources` as well when changing packaging or release configuration.
 
-GitHub Actions runs the unit suite plus real compile smoke tests with dbt 1.10.23 and dbt 2.0.9. The compatibility setup below is only needed to reproduce that matrix locally or exercise RowRay against Jaffle Shop.
+GitHub Actions runs the unit suite plus real compile smoke tests with dbt 1.10.23 and dbt 2.0.9. The matrix compares BASE and WORKTREE for an incremental model, installs a local dbt package, and verifies incremental vars plus full-refresh overrides across four real compiles. The compatibility setup below is only needed to reproduce that matrix locally or exercise RowRay against Jaffle Shop.
 
 ## Test against dbt v1 and v2
 
