@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/rowray/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/rowray?style=flat-square&amp;logo=pypi&amp;logoColor=white"></a>
-  <a href="https://pypi.org/project/rowray/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/rowray?style=flat-square&amp;logo=python&amp;logoColor=white"></a>
+  <a href="https://pypi.org/project/rowray/"><img alt="Python >=3.10" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fpypi.org%2Fpypi%2Frowray%2Fjson&amp;query=%24.info.requires_python&amp;label=python&amp;style=flat-square&amp;logo=python&amp;logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/pypi/l/rowray?style=flat-square"></a>
   <a href="https://github.com/mathieuMTT/rowray/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mathieuMTT/rowray?style=flat-square&amp;logo=github"></a>
 </p>
