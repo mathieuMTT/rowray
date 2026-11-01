@@ -3,7 +3,9 @@ rowray_compat:
   outputs:
     dev:
       type: bigquery
-      method: oauth
+      # Non-secret placeholder: compile constructs the adapter but never queries BigQuery.
+      method: oauth-secrets
+      token: rowray-offline-placeholder
       project: rowray-compat-placeholder
       dataset: rowray_compat
       location: EU
