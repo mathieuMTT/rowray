@@ -17,13 +17,13 @@ Compare Git BASE against your current working tree for schema drift, data shifts
 
 **Built for analytics engineers using dbt + BigQuery.**
 
-<p align="center">
-  <img alt="RowRay comparing a Jaffle Shop model" src="assets/rowray-demo.gif" width="1000">
-</p>
-
 - 🔬 Catch schema and data changes before production
 - 💸 Compare incremental and full-refresh scan costs
 - ⚡ Test committed, staged, unstaged, and untracked work
+
+<p align="center">
+  <img alt="RowRay comparing a Jaffle Shop model" src="assets/rowray-demo.gif" width="1000">
+</p>
 
 ## How RowRay works
 
