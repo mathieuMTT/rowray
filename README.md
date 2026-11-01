@@ -21,6 +21,51 @@ Compare Git BASE against your current working tree for schema drift, data shifts
 - 💸 Compare incremental and full-refresh scan costs
 - ⚡ Test committed, staged, unstaged, and untracked work
 
+## How RowRay works
+
+```mermaid
+flowchart LR
+    CLI(["rowray diff<br/>--select MODEL"])
+
+    subgraph COMPILE["1 · Compile both versions in parallel"]
+        direction TB
+        BASE["BASE<br/>Git ref in an isolated worktree"] --> BASE_SQL["dbt compile"]
+        WORKTREE["WORKTREE<br/>committed + local changes"] --> WORKTREE_SQL["dbt compile"]
+    end
+
+    CLI --> BASE
+    CLI --> WORKTREE
+
+    BASE_SQL --> DRY["2 · BigQuery dry runs<br/>No model is built"]
+    WORKTREE_SQL --> DRY
+    DRY --> DEFAULT["Schema diff<br/>Scan + estimated cost"]
+
+    BASE_SQL --> EXECUTE{"--execute?"}
+    WORKTREE_SQL --> EXECUTE
+    EXECUTE -->|Yes| DATA["Guarded data comparison<br/>Rows · nulls · distincts · sums"]
+    DATA --> COLUMN{"--column NAME?"}
+    COLUMN -->|Yes| FOCUS["Value counts<br/>Percentage variation"]
+
+    DEFAULT --> REPORT["3 · Terminal report<br/>BASE · WORKTREE · DELTA"]
+    DATA --> REPORT
+    FOCUS --> REPORT
+
+    classDef source fill:#102a32,stroke:#52debf,color:#ffffff,stroke-width:2px;
+    classDef safe fill:#102b4d,stroke:#4ea1ff,color:#ffffff,stroke-width:2px;
+    classDef optional fill:#35264c,stroke:#b68cff,color:#ffffff,stroke-width:2px;
+    classDef output fill:#173b2d,stroke:#52debf,color:#ffffff,stroke-width:2px;
+    class CLI,BASE,WORKTREE,BASE_SQL,WORKTREE_SQL source;
+    class DRY,DEFAULT safe;
+    class EXECUTE,DATA,COLUMN,FOCUS optional;
+    class REPORT output;
+```
+
+**Safe by default:** RowRay compiles SQL and uses BigQuery dry runs. It never builds or materializes the model.
+
+**Optional data comparison:** `--execute` runs one guarded aggregate query, dry-runs it first, and caps it at 200 GiB. `--column NAME` adds a separate guarded value-count comparison.
+
+**Full-refresh estimates:** `--full-refresh` adds parallel full-refresh compiles and dry runs for BASE and WORKTREE. It never executes the full-refresh SQL.
+
 ## What it compares
 
 By default, RowRay compiles both versions and uses BigQuery dry runs to report:
