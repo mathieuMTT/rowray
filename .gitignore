@@ -1,5 +1,6 @@
 .venv/
 dist/
+graphify-out/
 __pycache__/
 .pypi-recovery-codes
 ROADMAP.md
