@@ -25,6 +25,10 @@ class RowRayError(Exception):
     pass
 
 
+def _color(text: str, code: int, enabled: bool) -> str:
+    return f"\033[{code}m{text}\033[0m" if enabled else text
+
+
 @contextmanager
 def progress(label: str):
     started = time.monotonic()
@@ -35,7 +39,8 @@ def progress(label: str):
         frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
         index = 0
         while not stop.is_set():
-            print(f"\r{frames[index % len(frames)]} {label} ({time.monotonic() - started:.0f}s)", end="", flush=True)
+            spinner = _color(frames[index % len(frames)], 34, True)
+            print(f"\r{spinner} {label} ({time.monotonic() - started:.0f}s)", end="", flush=True)
             index += 1
             stop.wait(0.25)
 
@@ -55,7 +60,7 @@ def progress(label: str):
         stop.set()
         if thread:
             thread.join()
-        prefix = "✗" if failed else "✓"
+        prefix = "✗" if failed else _color("✓", 32, animated)
         clear = "\r\033[2K" if animated else ""
         print(f"{clear}{prefix} {label} ({time.monotonic() - started:.1f}s)", flush=True)
 
@@ -187,10 +192,10 @@ def parallel_results(futures: dict[str, Future], labels: dict[str, str]) -> dict
             lines = []
             for label, future in futures.items():
                 if label in completed:
-                    prefix = "✗" if future.exception() else "✓"
+                    prefix = "✗" if future.exception() else _color("✓", 32, True)
                     lines.append(f"{prefix} {labels[label]} ({completed[label]:.1f}s)")
                 else:
-                    spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[frame % 10]
+                    spinner = _color("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[frame % 10], 34, True)
                     lines.append(f"{spinner} {labels[label]} ({time.monotonic() - started:.0f}s)")
             print("\n".join(f"\r\033[2K{line}" for line in lines), flush=True)
             rendered = True

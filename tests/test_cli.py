@@ -2,6 +2,7 @@ import json
 import tempfile
 import threading
 import unittest
+from concurrent.futures import Future
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -13,10 +14,25 @@ from google.api_core.exceptions import Forbidden
 
 from rowray.analysis import focus_report, focus_sql, profile_sql, report
 from rowray.cli import format_google_error
-from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, merge_vars, progress, resolve_env, run as run_command
+from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, merge_vars, parallel_results, progress, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
+    def test_colors_interactive_progress(self):
+        class Terminal(StringIO):
+            def isatty(self):
+                return True
+
+        future = Future()
+        future.set_result("compiled")
+        output = Terminal()
+        with patch("rowray.compare.sys.stdout", output):
+            result = parallel_results({"base": future}, {"base": "Compile BASE"})
+
+        self.assertEqual(result, {"base": "compiled"})
+        self.assertIn("\033[34m⠋\033[0m", output.getvalue())
+        self.assertIn("\033[32m✓\033[0m", output.getvalue())
+
     def test_formats_bigquery_permission_error(self):
         error = Forbidden(
             "Access Denied: Project vp-data-prod: User does not have bigquery.jobs.create permission in project vp-data-prod."
