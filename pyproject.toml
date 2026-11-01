@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rowray"
-version = "0.2.0"
+version = "0.3.0"
 description = "X-ray dbt changes for schema drift, data shifts, and BigQuery scan cost"
 readme = "README.md"
 authors = [{ name = "Mathieu Rozé" }]
