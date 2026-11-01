@@ -32,7 +32,7 @@ def parser() -> argparse.ArgumentParser:
         help="BigQuery project for RowRay jobs; does not change the dbt target",
     )
     diff.add_argument("--vars", dest="dbt_vars", metavar="YAML", help="dbt variables used for incremental compiles and full-refresh defaults")
-    diff.add_argument("--warn-error-options", metavar="YAML", help="dbt warning options passed unchanged to all compiles")
+    diff.add_argument("--warn-error-options", metavar="YAML", help="dbt v1 warning options passed unchanged to all compiles")
     diff.add_argument("--full-refresh", action="store_true", help="also estimate full-refresh scan cost for both versions")
     diff.add_argument(
         "--full-refresh-vars",

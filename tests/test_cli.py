@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -14,10 +16,20 @@ from google.api_core.exceptions import Forbidden
 
 from rowray.analysis import focus_report, focus_sql, profile_sql, report
 from rowray.cli import format_google_error
-from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, merge_vars, parallel_results, progress, resolve_env, run as run_command
+from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, dbt_major_version, merge_vars, parallel_results, progress, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
+    def test_dbt_compat_rejects_unknown_runtime(self):
+        script = Path(__file__).parents[1] / "scripts" / "dbt-compat"
+        result = subprocess.run(
+            [sys.executable, script, "run", "v3", "--", "diff"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid choice", result.stderr)
+
     def test_colors_interactive_progress(self):
         class Terminal(StringIO):
             def isatty(self):
@@ -53,6 +65,24 @@ class CliTest(unittest.TestCase):
     def test_overrides_bigquery_execution_project(self, client):
         bigquery_client({"method": "oauth", "project": "vp-data-prod"}, "vp-data-dev")
         client.assert_called_once_with(project="vp-data-dev")
+
+    @patch("rowray.compare.bigquery.Client")
+    def test_uses_dbt_v2_database_as_bigquery_project(self, client):
+        bigquery_client({"method": "oauth", "database": "vp-data-dev"})
+        client.assert_called_once_with(project="vp-data-dev")
+
+    @patch("rowray.compare.run", return_value="Core:\n  - installed: 1.10.23")
+    def test_detects_dbt_v1(self, _run):
+        self.assertEqual(dbt_major_version("dbt"), 1)
+
+    @patch("rowray.compare.run", return_value="dbt 2.0.9")
+    def test_detects_dbt_v2(self, _run):
+        self.assertEqual(dbt_major_version("dbt"), 2)
+
+    @patch("rowray.compare.run", return_value="unknown")
+    def test_rejects_unknown_dbt_version(self, _run):
+        with self.assertRaisesRegex(RowRayError, "could not determine dbt version"):
+            dbt_major_version("dbt")
 
     def test_reads_model_and_renders_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -203,6 +233,14 @@ class CliTest(unittest.TestCase):
             merge_vars(None, "[not, a, mapping]")
         with self.assertRaisesRegex(RowRayError, "requires --full-refresh"):
             compare("orders", "origin/main", None, None, None, None, False, False, None, "{day: 1}")
+
+    def test_rejects_warn_error_options_with_dbt_v2(self):
+        with (
+            patch("rowray.compare.shutil.which", return_value="/usr/bin/dbt"),
+            patch("rowray.compare.dbt_major_version", return_value=2),
+            self.assertRaisesRegex(RowRayError, "not supported by dbt v2"),
+        ):
+            compare("orders", "HEAD", None, None, None, "{error: all}", False, False, None)
 
     @patch("rowray.compare.subprocess.run", return_value=CompletedProcess([], 1, "dbt error", "dependency warning"))
     def test_reports_dbt_error_before_warnings(self, _subprocess_run):

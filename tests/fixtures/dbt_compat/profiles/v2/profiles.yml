@@ -1,0 +1,10 @@
+rowray_compat:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      database: rowray-compat-placeholder
+      schema: rowray_compat
+      location: EU
+      threads: 1

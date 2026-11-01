@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import subprocess
+import sys
+from importlib.metadata import PackageNotFoundError, distribution
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SANDBOX = ROOT / ".sandbox"
+REPOSITORY = "https://github.com/dbt-labs/jaffle-shop.git"
+VERSIONS = {
+    "v1": {
+        "packages": ("dbt-core==1.10.23", "dbt-bigquery==1.10.3"),
+        "branch": "jaffle-shop-old",
+        "commit": "dd011b41f1bbfe83a561ec084b67d1063c299e46",
+        "dataset": "ROWRAY_BQ_DATASET_V1",
+    },
+    "v2": {
+        "packages": ("dbt==2.0.9",),
+        "branch": "main",
+        "commit": "5beb145b00f5465ec759cfcdd9745e858818cf95",
+        "dataset": "ROWRAY_BQ_DATASET_V2",
+    },
+}
+
+
+def checked(command: list[str], cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
+    subprocess.run(command, cwd=cwd, env=env, check=True)
+
+
+def runtime_path(version: str) -> Path:
+    return SANDBOX / "venvs" / version
+
+
+def project_path(version: str) -> Path:
+    return SANDBOX / f"jaffle-{version}"
+
+
+def dbt_path(version: str) -> Path:
+    return runtime_path(version) / "bin" / "dbt"
+
+
+def ssl_environment() -> dict[str, str]:
+    certificate = distribution("certifi").locate_file("certifi/cacert.pem")
+    return {**os.environ, "SSL_CERT_FILE": str(certificate)}
+
+
+def selected_versions(version: str | None) -> tuple[str, ...]:
+    return (version,) if version else tuple(VERSIONS)
+
+
+def setup(version: str | None) -> None:
+    versions = selected_versions(version)
+    existing = [str(runtime_path(item)) for item in versions if runtime_path(item).exists()]
+    if existing:
+        raise RuntimeError(f"refusing to overwrite existing runtime: {', '.join(existing)}")
+    for item in versions:
+        path = runtime_path(item)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        checked(["uv", "venv", str(path)])
+        environment = ssl_environment() if item == "v2" else None
+        checked(
+            ["uv", "pip", "install", "--python", str(path / "bin" / "python"), *VERSIONS[item]["packages"]],
+            env=environment,
+        )
+
+
+def profile(version: str) -> str:
+    database_key, schema_key = ("project", "dataset") if version == "v1" else ("database", "schema")
+    dataset = VERSIONS[version]["dataset"]
+    return f"""default:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      {database_key}: \"{{{{ env_var('ROWRAY_BQ_PROJECT') }}}}\"
+      {schema_key}: \"{{{{ env_var('{dataset}') }}}}\"
+      location: \"{{{{ env_var('ROWRAY_BQ_LOCATION') }}}}\"
+      threads: 4
+"""
+
+
+def jaffle() -> None:
+    missing = [item for item in VERSIONS if not dbt_path(item).is_file()]
+    if missing:
+        raise RuntimeError(f"missing dbt runtime: {', '.join(missing)}; run setup first")
+    existing = [str(project_path(item)) for item in VERSIONS if project_path(item).exists()]
+    if existing:
+        raise RuntimeError(f"refusing to overwrite existing project: {', '.join(existing)}")
+    for item, config in VERSIONS.items():
+        path = project_path(item)
+        checked(["git", "clone", "--branch", config["branch"], REPOSITORY, str(path)])
+        checked(["git", "checkout", "--detach", config["commit"]], cwd=path)
+        environment = ssl_environment() if item == "v2" else None
+        checked([str(dbt_path(item)), "deps", "--project-dir", str(path)], cwd=path, env=environment)
+        (path / "profiles.yml").write_text(profile(item))
+
+
+def required_environment() -> None:
+    names = ("ROWRAY_BQ_PROJECT", "ROWRAY_BQ_DATASET_V1", "ROWRAY_BQ_DATASET_V2", "ROWRAY_BQ_LOCATION")
+    missing = [name for name in names if not os.environ.get(name)]
+    if missing:
+        raise RuntimeError(f"missing environment variables: {', '.join(missing)}")
+
+
+def doctor() -> None:
+    required_environment()
+    for item in VERSIONS:
+        path = project_path(item)
+        if not path.is_dir():
+            raise RuntimeError(f"missing project {path}; run jaffle first")
+        checked(
+            [str(dbt_path(item)), "debug", "--project-dir", str(path), "--profiles-dir", str(path)],
+            cwd=path,
+            env=ssl_environment() if item == "v2" else None,
+        )
+
+
+def run_rowray(version: str, arguments: list[str]) -> int:
+    path = project_path(version)
+    if not path.is_dir() or not dbt_path(version).is_file():
+        raise RuntimeError(f"missing {version} sandbox; run setup and jaffle first")
+    if arguments[:1] == ["--"]:
+        arguments = arguments[1:]
+    if not arguments:
+        raise RuntimeError("run requires RowRay arguments after --")
+    environment = {
+        **os.environ,
+        "PATH": f"{dbt_path(version).parent}{os.pathsep}{os.environ.get('PATH', '')}",
+    }
+    return subprocess.run(
+        ["uv", "run", "--project", str(ROOT), "--locked", "rowray", *arguments],
+        cwd=path,
+        env=environment,
+    ).returncode
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description="Set up and run RowRay against dbt v1 and v2")
+    commands = result.add_subparsers(dest="command", required=True)
+    setup_parser = commands.add_parser("setup", help="install isolated dbt runtimes")
+    setup_parser.add_argument("version", choices=VERSIONS, nargs="?")
+    commands.add_parser("jaffle", help="clone pinned Jaffle Shop projects")
+    commands.add_parser("doctor", help="run dbt debug for both projects")
+    run_parser = commands.add_parser("run", help="run RowRay with one dbt runtime")
+    run_parser.add_argument("version", choices=VERSIONS)
+    run_parser.add_argument("arguments", nargs=argparse.REMAINDER)
+    return result
+
+
+def main() -> int:
+    arguments = parser().parse_args()
+    try:
+        if arguments.command == "setup":
+            setup(arguments.version)
+        elif arguments.command == "jaffle":
+            jaffle()
+        elif arguments.command == "doctor":
+            doctor()
+        else:
+            return run_rowray(arguments.version, arguments.arguments)
+        return 0
+    except (OSError, RuntimeError, PackageNotFoundError, subprocess.CalledProcessError) as error:
+        print(f"dbt-compat: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

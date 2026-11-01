@@ -149,7 +149,7 @@ Compile against a production target while submitting RowRay's BigQuery jobs from
 rowray diff --select my_model --target prod --execution-project my-dev-project
 ```
 
-`--execution-project` overrides `execution_project` from the selected profile output, which otherwise falls back to its `project`. It affects RowRay dry runs and aggregate queries; dbt compilation still uses `--target`.
+`--execution-project` overrides `execution_project` from the selected profile output, which otherwise falls back to dbt v1's `project` or dbt v2's `database`. It affects RowRay dry runs and aggregate queries; dbt compilation still uses `--target`.
 
 The effective project is selected in this order:
 
@@ -157,6 +157,7 @@ The effective project is selected in this order:
 --execution-project
 → execution_project from the selected profiles.yml output
 → project from the selected profiles.yml output
+→ database from the selected dbt v2 profiles.yml output
 ```
 
 A common read-only production setup grants `roles/bigquery.dataViewer` on the referenced production datasets and `roles/bigquery.jobUser` on the execution project. BigQuery dry runs are free, but still require `bigquery.jobs.create` in that execution project.
@@ -176,6 +177,8 @@ rowray diff \
   --select my_model \
   --warn-error-options '{"silence":["CustomKeyInConfigDeprecation"]}'
 ```
+
+`--warn-error-options` is available with dbt v1 only because dbt v2 removed that CLI option.
 
 Add full-refresh scan estimates for BASE and the working tree. This runs two extra compiles and dry runs, but still does not materialize the model:
 
@@ -272,6 +275,74 @@ bytes processed / 1024⁴ × $6.25
 - `--column` returns every value without an output limit
 - `--full-refresh-vars` performs a shallow merge; overriding a nested mapping replaces that complete top-level value
 - The current project must already have its dbt dependencies installed; RowRay installs dependencies only in the BASE worktree
+
+## Contributing
+
+Contributing to RowRay itself requires Python 3.10+, Git, and [uv](https://docs.astral.sh/uv/). dbt, Jaffle Shop, Google Cloud credentials, and a BigQuery project are not required for the standard unit tests.
+
+Clone the repository and install the locked development environment:
+
+```bash
+git clone https://github.com/mathieuMTT/rowray.git
+cd rowray
+uv sync --locked
+```
+
+Run the same unit suite and public CLI checks used during development:
+
+```bash
+uv run --locked python -m unittest discover -s tests -v
+uv run --locked rowray --help
+uv run --locked rowray diff --help
+```
+
+Before opening a pull request, keep changes focused, add tests for new branching or error handling, and update both the CLI help and this README for user-facing behavior. Run `uv build --no-sources` as well when changing packaging or release configuration.
+
+GitHub Actions runs the unit suite plus real compile smoke tests with dbt 1.10.23 and dbt 2.0.9. The compatibility setup below is only needed to reproduce that matrix locally or exercise RowRay against Jaffle Shop.
+
+## Test against dbt v1 and v2
+
+The repository includes an isolated compatibility harness. It installs dbt Core 1.10.23 with dbt-bigquery 1.10.3 and dbt 2.0.9 into separate ignored virtual environments, so no global dbt installation is needed and neither runtime is installed into RowRay's own environment:
+
+```bash
+uv sync --locked
+uv run --locked scripts/dbt-compat setup
+uv run --locked scripts/dbt-compat jaffle
+```
+
+The `jaffle` command clones two ignored Jaffle Shop sandboxes at fixed commits under `.sandbox/`. The harness refuses to overwrite existing runtimes or projects so local model changes are never discarded.
+
+The live BigQuery steps additionally require the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), Application Default Credentials, and permission to create jobs and datasets in a development project. They are not needed for the compile smoke tests.
+
+Configure separate BigQuery datasets for the two projects, then validate both connections:
+
+```bash
+export ROWRAY_BQ_PROJECT=my-development-project
+export ROWRAY_BQ_DATASET_V1=jaffle_rowray_v1
+export ROWRAY_BQ_DATASET_V2=jaffle_rowray_v2
+export ROWRAY_BQ_LOCATION=EU
+
+gcloud auth application-default login
+uv run --locked scripts/dbt-compat doctor
+```
+
+`doctor` runs only `dbt debug`. It does not seed, build, or run a RowRay comparison.
+
+Run the safe, dry-run-only RowRay path after changing `stg_customers` in the corresponding sandbox:
+
+```bash
+uv run --locked scripts/dbt-compat run v1 -- diff --select stg_customers --base HEAD
+uv run --locked scripts/dbt-compat run v2 -- diff --select stg_customers --base HEAD
+```
+
+The Jaffle Shop source tables must exist before BigQuery can validate those queries. The following commands write data and may incur BigQuery costs; run them only when that is intended:
+
+```bash
+.sandbox/venvs/v1/bin/dbt seed --project-dir .sandbox/jaffle-v1 --profiles-dir .sandbox/jaffle-v1 --full-refresh --vars '{"load_source_data": true}'
+.sandbox/venvs/v2/bin/dbt seed --project-dir .sandbox/jaffle-v2 --profiles-dir .sandbox/jaffle-v2 --full-refresh --vars '{"load_source_data": true}'
+```
+
+Run `dbt build` with the same version-specific paths only when testing marts that depend on built staging relations. The harness never adds `--execute` or `--column`.
 
 ## Update or remove
 

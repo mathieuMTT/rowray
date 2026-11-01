@@ -1,4 +1,5 @@
 .venv/
+.sandbox/
 dist/
 graphify-out/
 __pycache__/

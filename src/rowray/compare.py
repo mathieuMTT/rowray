@@ -73,6 +73,14 @@ def run(command: list[str], cwd: Path) -> str:
     return result.stdout.strip()
 
 
+def dbt_major_version(dbt: str) -> int:
+    output = run([dbt, "--version"], Path.cwd())
+    match = re.search(r"(?:installed:\s*|dbt\s+)(\d+)\.", output)
+    if not match:
+        raise RowRayError("could not determine dbt version")
+    return int(match.group(1))
+
+
 def find_project(start: Path) -> Path:
     for path in (start, *start.parents):
         if (path / "dbt_project.yml").is_file():
@@ -248,7 +256,7 @@ def profile_output(project: Path, profiles_dir: Path, target: str | None) -> dic
 
 
 def bigquery_client(output: dict, execution_project: str | None = None) -> bigquery.Client:
-    project = execution_project or resolve_env(output.get("execution_project") or output.get("project")) or None
+    project = execution_project or resolve_env(output.get("execution_project") or output.get("project") or output.get("database")) or None
     method = output.get("method")
     if method == "service-account":
         keyfile = resolve_env(output.get("keyfile"))
@@ -290,6 +298,8 @@ def compare(
     dbt = shutil.which("dbt")
     if not dbt:
         raise RowRayError("dbt not found; activate the environment used by this project")
+    if warn_error_options and dbt_major_version(dbt) >= 2:
+        raise RowRayError("--warn-error-options is not supported by dbt v2")
     project = find_project(Path.cwd().resolve())
     profiles_dir = find_profiles(project, profiles_dir)
     repo = Path(run(["git", "rev-parse", "--show-toplevel"], project))
