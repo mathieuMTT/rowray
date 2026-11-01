@@ -33,6 +33,13 @@ class CliTest(unittest.TestCase):
         self.assertIn("\033[34m⠋\033[0m", output.getvalue())
         self.assertIn("\033[32m✓\033[0m", output.getvalue())
 
+        failed = Future()
+        failed.set_exception(RuntimeError("failed"))
+        output = Terminal()
+        with patch("rowray.compare.sys.stdout", output), self.assertRaisesRegex(RuntimeError, "failed"):
+            parallel_results({"base": failed}, {"base": "Compile BASE"})
+        self.assertIn("\033[31m✗\033[0m", output.getvalue())
+
     def test_formats_bigquery_permission_error(self):
         error = Forbidden(
             "Access Denied: Project vp-data-prod: User does not have bigquery.jobs.create permission in project vp-data-prod."

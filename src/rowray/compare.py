@@ -60,7 +60,7 @@ def progress(label: str):
         stop.set()
         if thread:
             thread.join()
-        prefix = "✗" if failed else _color("✓", 32, animated)
+        prefix = _color("✗", 31, animated) if failed else _color("✓", 32, animated)
         clear = "\r\033[2K" if animated else ""
         print(f"{clear}{prefix} {label} ({time.monotonic() - started:.1f}s)", flush=True)
 
@@ -192,7 +192,7 @@ def parallel_results(futures: dict[str, Future], labels: dict[str, str]) -> dict
             lines = []
             for label, future in futures.items():
                 if label in completed:
-                    prefix = "✗" if future.exception() else _color("✓", 32, True)
+                    prefix = _color("✗", 31, True) if future.exception() else _color("✓", 32, True)
                     lines.append(f"{prefix} {labels[label]} ({completed[label]:.1f}s)")
                 else:
                     spinner = _color("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[frame % 10], 34, True)
