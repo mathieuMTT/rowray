@@ -111,10 +111,13 @@ class CliTest(unittest.TestCase):
             [],
             None,
             "Profile not run",
+            model="orders",
         )
+        self.assertTrue(output.startswith("orders\n\n"))
         self.assertIn("1.0 GiB", output)
         self.assertIn("2.0 GiB", output)
         self.assertIn("+100.0%", output)
+        self.assertLess(output.index("On-demand estimate"), output.index("added: new"))
         self.assertIn("added: new", output)
         self.assertIn("removed: old", output)
         self.assertIn("type changes: id INTEGER → STRING", output)

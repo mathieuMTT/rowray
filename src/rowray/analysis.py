@@ -151,11 +151,13 @@ def report(
     profile: dict[str, dict] | None,
     profile_note: str,
     full_refresh: tuple[int, int] | None = None,
+    model: str | None = None,
 ) -> str:
     base_cost = base / 1024**4 * PRICE_PER_TIB
     head_cost = head / 1024**4 * PRICE_PER_TIB
     width = 20 if full_refresh else 12
-    lines = [f"{'':{width}}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}"]
+    lines = [model, ""] if model else []
+    lines.append(f"{'':{width}}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}")
     if full_refresh:
         full_base, full_head = full_refresh
         full_base_cost = full_base / 1024**4 * PRICE_PER_TIB
@@ -175,6 +177,7 @@ def report(
                 f"{'Cost (USD)':{width}}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
             ]
         )
+    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; no model is built.")
     lines.append("")
     added, removed, changed = schema_changes(
         [(name, field_type) for name, field_type, _mode in base_columns],
@@ -218,5 +221,4 @@ def report(
         if unchanged:
             rows = [(name, f"{int(head_row[name + '__distincts']):,}") for name in unchanged]
             lines.extend(["", "Unchanged columns", *terminal_table(("Column", "Distincts"), rows, {1})])
-    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; no model is built.")
     return "\n".join(lines)
