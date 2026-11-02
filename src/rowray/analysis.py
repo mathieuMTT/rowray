@@ -175,6 +175,7 @@ def report(
                 f"{'Cost (USD)':{width}}{f'${base_cost:.4f}':>14}{f'${head_cost:.4f}':>14}{f'${head_cost - base_cost:+.4f}':>14}",
             ]
         )
+    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; no model is built.")
     lines.append("")
     added, removed, changed = schema_changes(
         [(name, field_type) for name, field_type, _mode in base_columns],
@@ -218,5 +219,4 @@ def report(
         if unchanged:
             rows = [(name, f"{int(head_row[name + '__distincts']):,}") for name in unchanged]
             lines.extend(["", "Unchanged columns", *terminal_table(("Column", "Distincts"), rows, {1})])
-    lines.append(f"\nOn-demand estimate at ${PRICE_PER_TIB:.2f}/TiB; no model is built.")
     return "\n".join(lines)
