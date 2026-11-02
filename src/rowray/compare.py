@@ -52,10 +52,13 @@ def publish_report(report_text: str, cwd: Path | None = None) -> str:
     remote = _publish_command(["git", "remote", "get-url", "origin"], cwd)
     parsed_remote = _remote_url(remote)
     host = parsed_remote.hostname
-    if host == "github.com":
+    host_parts = (host or "").split(".")
+    if "github" in host_parts:
         provider, cli = "github", "gh"
-    else:
+    elif "gitlab" in host_parts:
         provider, cli = "gitlab", "glab"
+    else:
+        raise RowRayError(f"cannot detect GitHub or GitLab from origin host {host!r}")
 
     if provider == "github":
         pr = _publish_command([cli, "pr", "view", "--json", "number"], cwd)

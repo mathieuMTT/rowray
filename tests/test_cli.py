@@ -48,6 +48,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(_remote_url("git@github.com:owner/repo.git").hostname, "github.com")
         self.assertEqual(_remote_url("https://gitlab.com/group/subgroup/repo.git").path, "/group/subgroup/repo.git")
 
+    def test_rejects_unknown_publish_provider(self):
+        with patch(
+            "rowray.compare.subprocess.run",
+            return_value=CompletedProcess([], 0, "https://bitbucket.org/owner/repo.git", ""),
+        ):
+            with self.assertRaisesRegex(RowRayError, "cannot detect GitHub or GitLab from origin host 'bitbucket.org'"):
+                publish_report("report", Path("/repo"))
+
     def test_publishes_and_updates_github_report_comment(self):
         def command(args, cwd, **_kwargs):
             if args[:3] == ["git", "remote", "get-url"]:
