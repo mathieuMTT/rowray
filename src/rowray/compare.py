@@ -499,7 +499,7 @@ def compare(
                     with progress(f"Analyze column {column}"):
                         config = bigquery.QueryJobConfig(maximum_bytes_billed=PROFILE_SCAN_LIMIT)
                         focus_rows = [dict(row.items()) for row in client.query(query, job_config=config).result()]
-            output = report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note, full_bytes)
+            output = report(base_bytes, head_bytes, base_columns, head_columns, columns, skipped, profile, profile_note, full_bytes, model)
             return output + (f"\n\n{focus_report(column, focus_rows, focus_note)}" if column else "")
     finally:
         for worktree in reversed(worktrees):
