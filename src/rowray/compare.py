@@ -48,13 +48,17 @@ def _remote_url(remote: str):
 
 def publish_report(report_text: str, cwd: Path | None = None) -> str:
     cwd = cwd or Path.cwd()
+    body = f"{PUBLISH_MARKER}\n\n```text\n{report_text}\n```"
     remote = _publish_command(["git", "remote", "get-url", "origin"], cwd)
     parsed_remote = _remote_url(remote)
     host = parsed_remote.hostname
-    if host == "github.com":
+    host_parts = (host or "").split(".")
+    if "github" in host_parts:
         provider, cli = "github", "gh"
-    else:
+    elif "gitlab" in host_parts:
         provider, cli = "gitlab", "glab"
+    else:
+        raise RowRayError(f"cannot detect GitHub or GitLab from origin host {host!r}")
 
     if provider == "github":
         pr = _publish_command([cli, "pr", "view", "--json", "number"], cwd)
@@ -65,7 +69,6 @@ def publish_report(report_text: str, cwd: Path | None = None) -> str:
         endpoint = f"repos/{owner_repo}/issues/{number}/comments"
         comments = json.loads(_publish_command([cli, "api", "--paginate", "--slurp", endpoint], cwd))
         matches = [item for page in comments for item in (page if isinstance(page, list) else []) if PUBLISH_MARKER in item.get("body", "")]
-        body = f"{PUBLISH_MARKER}\n\n{report_text}"
         if matches:
             _publish_command([cli, "api", f"{endpoint}/{matches[-1]['id']}", "--method", "PATCH", "--field", f"body={body}"], cwd)
         else:
@@ -80,7 +83,6 @@ def publish_report(report_text: str, cwd: Path | None = None) -> str:
     endpoint = f"projects/{quote(project_path, safe='')}/merge_requests/{iid}/notes"
     notes = json.loads(_publish_command([cli, "api", "--paginate", "--output", "json", endpoint], cwd))
     matches = [item for item in notes if PUBLISH_MARKER in item.get("body", "")]
-    body = f"{PUBLISH_MARKER}\n\n{report_text}"
     if matches:
         _publish_command([cli, "api", endpoint + f"/{matches[-1]['id']}", "-X", "PUT", "-f", f"body={body}"], cwd)
     else:

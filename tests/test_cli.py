@@ -48,6 +48,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(_remote_url("git@github.com:owner/repo.git").hostname, "github.com")
         self.assertEqual(_remote_url("https://gitlab.com/group/subgroup/repo.git").path, "/group/subgroup/repo.git")
 
+    def test_rejects_unknown_publish_provider(self):
+        with patch(
+            "rowray.compare.subprocess.run",
+            return_value=CompletedProcess([], 0, "https://bitbucket.org/owner/repo.git", ""),
+        ):
+            with self.assertRaisesRegex(RowRayError, "cannot detect GitHub or GitLab from origin host 'bitbucket.org'"):
+                publish_report("report", Path("/repo"))
+
     def test_publishes_and_updates_github_report_comment(self):
         def command(args, cwd, **_kwargs):
             if args[:3] == ["git", "remote", "get-url"]:
@@ -64,7 +72,7 @@ class CliTest(unittest.TestCase):
             message = publish_report("new report", Path("/repo"))
         self.assertEqual(message, "Report published to GitHub PR #12.")
         self.assertEqual(run_api.call_args.args[0][2], "repos/owner/repo/issues/12/comments/34")
-        self.assertIn("body=<!-- rowray-report -->\n\nnew report", run_api.call_args.args[0])
+        self.assertIn("body=<!-- rowray-report -->\n\n```text\nnew report\n```", run_api.call_args.args[0])
 
     def test_creates_gitlab_report_comment(self):
         def command(args, cwd, **_kwargs):
@@ -82,6 +90,7 @@ class CliTest(unittest.TestCase):
             message = publish_report("report", Path("/repo"))
         self.assertEqual(message, "Report published to GitLab MR !8.")
         self.assertIn("projects/group%2Fsubgroup%2Frepo/merge_requests/8/notes", run_api.call_args.args[0])
+        self.assertIn("body=<!-- rowray-report -->\n\n```text\nreport\n```", run_api.call_args.args[0])
 
     def test_publish_reports_cli_failure_concisely(self):
         def command(args, cwd, **_kwargs):
