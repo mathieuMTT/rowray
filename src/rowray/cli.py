@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from google.api_core.exceptions import GoogleAPICallError
 
-from rowray.compare import RowRayError, compare
+from rowray.compare import RowRayError, compare, publish_report
 
 JOB_PERMISSION = re.compile(r"Project ([^:]+): User does not have bigquery\.jobs\.create")
 
@@ -41,27 +41,29 @@ def parser() -> argparse.ArgumentParser:
     )
     diff.add_argument("--execute", action="store_true", help="run the potentially billed incremental data comparison after a dry run")
     diff.add_argument("--column", metavar="NAME", help="compare actual row counts per value; requires --execute")
+    diff.add_argument("--publish", action="store_true", help="publish the report to the open GitHub PR or GitLab MR")
     return result
 
 
 def main() -> int:
     args = parser().parse_args()
     try:
-        print(
-            compare(
-                args.select,
-                args.base,
-                args.profiles_dir,
-                args.target,
-                args.dbt_vars,
-                args.warn_error_options,
-                args.full_refresh,
-                args.execute,
-                args.column,
-                args.full_refresh_vars,
-                args.execution_project,
-            )
+        output = compare(
+            args.select,
+            args.base,
+            args.profiles_dir,
+            args.target,
+            args.dbt_vars,
+            args.warn_error_options,
+            args.full_refresh,
+            args.execute,
+            args.column,
+            args.full_refresh_vars,
+            args.execution_project,
         )
+        print(output)
+        if args.publish:
+            print(publish_report(output))
         return 0
     except (OSError, RowRayError, yaml.YAMLError, ValueError) as error:
         print(f"rowray: {error}", file=sys.stderr)

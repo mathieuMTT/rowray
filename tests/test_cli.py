@@ -15,11 +15,85 @@ import yaml
 from google.api_core.exceptions import Forbidden
 
 from rowray.analysis import focus_report, focus_sql, profile_sql, report
-from rowray.cli import format_google_error
-from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, dbt_major_version, merge_vars, parallel_results, progress, resolve_env, run as run_command
+from rowray.cli import format_google_error, main
+from rowray.compare import RowRayError, bigquery_client, compare, compile_model, compile_refs, compiled_sql, dbt_major_version, merge_vars, parallel_results, progress, publish_report, resolve_env, run as run_command
 
 
 class CliTest(unittest.TestCase):
+    def test_publish_flag_posts_after_printing_report(self):
+        output = StringIO()
+        with (
+            patch("sys.argv", ["rowray", "diff", "--select", "orders", "--publish"]),
+            patch("rowray.cli.compare", return_value="report"),
+            patch("rowray.cli.publish_report", return_value="Report published.") as publish,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(main(), 0)
+        self.assertEqual(output.getvalue(), "report\nReport published.\n")
+        publish.assert_called_once_with("report")
+
+    def test_does_not_publish_without_flag(self):
+        with (
+            patch("sys.argv", ["rowray", "diff", "--select", "orders"]),
+            patch("rowray.cli.compare", return_value="report"),
+            patch("rowray.cli.publish_report") as publish,
+            redirect_stdout(StringIO()),
+        ):
+            self.assertEqual(main(), 0)
+        publish.assert_not_called()
+
+    def test_remote_url_parsing(self):
+        from rowray.compare import _remote_url
+
+        self.assertEqual(_remote_url("git@github.com:owner/repo.git").hostname, "github.com")
+        self.assertEqual(_remote_url("https://gitlab.com/group/subgroup/repo.git").path, "/group/subgroup/repo.git")
+
+    def test_publishes_and_updates_github_report_comment(self):
+        def command(args, cwd, **_kwargs):
+            if args[:3] == ["git", "remote", "get-url"]:
+                output = "git@github.com:owner/repo.git"
+            elif args[:3] == ["gh", "pr", "view"]:
+                output = '{"number": 12}'
+            elif args[:3] == ["gh", "api", "--paginate"]:
+                output = '[[{"id": 34, "body": "<!-- rowray-report --> old"}]]'
+            else:
+                output = ""
+            return CompletedProcess(args, 0, output, "")
+
+        with patch("rowray.compare.subprocess.run", side_effect=command) as run_api:
+            message = publish_report("new report", Path("/repo"))
+        self.assertEqual(message, "Report published to GitHub PR #12.")
+        self.assertEqual(run_api.call_args.args[0][2], "repos/owner/repo/issues/12/comments/34")
+        self.assertIn("body=<!-- rowray-report -->\n\n```text\nnew report\n```", run_api.call_args.args[0])
+
+    def test_creates_gitlab_report_comment(self):
+        def command(args, cwd, **_kwargs):
+            if args[:3] == ["git", "remote", "get-url"]:
+                output = "https://gitlab.example/group/subgroup/repo.git"
+            elif args[:3] == ["glab", "mr", "view"]:
+                output = '{"iid": 8}'
+            elif args[:2] == ["glab", "api"]:
+                output = "[]"
+            else:
+                output = ""
+            return CompletedProcess(args, 0, output, "")
+
+        with patch("rowray.compare.subprocess.run", side_effect=command) as run_api:
+            message = publish_report("report", Path("/repo"))
+        self.assertEqual(message, "Report published to GitLab MR !8.")
+        self.assertIn("projects/group%2Fsubgroup%2Frepo/merge_requests/8/notes", run_api.call_args.args[0])
+        self.assertIn("body=<!-- rowray-report -->\n\n```text\nreport\n```", run_api.call_args.args[0])
+
+    def test_publish_reports_cli_failure_concisely(self):
+        def command(args, cwd, **_kwargs):
+            if args[0] == "git":
+                return CompletedProcess(args, 0, "https://github.com/owner/repo.git", "")
+            return CompletedProcess(args, 1, "", "not authenticated")
+
+        with patch("rowray.compare.subprocess.run", side_effect=command):
+            with self.assertRaisesRegex(RowRayError, "could not publish report with gh: not authenticated"):
+                publish_report("report", Path("/repo"))
+
     def test_dbt_compat_rejects_unknown_runtime(self):
         script = Path(__file__).parents[1] / "scripts" / "dbt-compat"
         result = subprocess.run(
