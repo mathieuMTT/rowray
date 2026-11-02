@@ -151,11 +151,13 @@ def report(
     profile: dict[str, dict] | None,
     profile_note: str,
     full_refresh: tuple[int, int] | None = None,
+    model: str | None = None,
 ) -> str:
     base_cost = base / 1024**4 * PRICE_PER_TIB
     head_cost = head / 1024**4 * PRICE_PER_TIB
     width = 20 if full_refresh else 12
-    lines = [f"{'':{width}}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}"]
+    lines = [model, ""] if model else []
+    lines.append(f"{'':{width}}{'BASE':>14}{'WORKTREE':>14}{'DELTA':>14}")
     if full_refresh:
         full_base, full_head = full_refresh
         full_base_cost = full_base / 1024**4 * PRICE_PER_TIB

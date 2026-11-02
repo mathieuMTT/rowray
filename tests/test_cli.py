@@ -111,7 +111,9 @@ class CliTest(unittest.TestCase):
             [],
             None,
             "Profile not run",
+            model="orders",
         )
+        self.assertTrue(output.startswith("orders\n\n"))
         self.assertIn("1.0 GiB", output)
         self.assertIn("2.0 GiB", output)
         self.assertIn("+100.0%", output)
