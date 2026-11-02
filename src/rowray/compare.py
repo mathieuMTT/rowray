@@ -10,6 +10,7 @@ import time
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import quote, urlparse
 
 import yaml
 from google.cloud import bigquery
@@ -23,6 +24,68 @@ ENV_VAR = re.compile(r'''^\s*\{\{\s*env_var\(["']([^"']+)["'](?:,\s*["']([^"']*)
 
 class RowRayError(Exception):
     pass
+
+
+PUBLISH_MARKER = "<!-- rowray-report -->"
+
+
+def _publish_command(command: list[str], cwd: Path) -> str:
+    try:
+        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    except OSError as error:
+        raise RowRayError(f"{command[0]} is required to publish the report") from error
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        message = detail[-1] if detail else "command failed"
+        raise RowRayError(f"could not publish report with {command[0]}: {message}")
+    return result.stdout.strip()
+
+
+def _remote_url(remote: str):
+    match = re.match(r"(?:[^@]+@)?([^:]+):(.+)$", remote) if "://" not in remote else None
+    return urlparse(f"https://{match.group(1)}/{match.group(2)}" if match else remote)
+
+
+def publish_report(report_text: str, cwd: Path | None = None) -> str:
+    cwd = cwd or Path.cwd()
+    remote = _publish_command(["git", "remote", "get-url", "origin"], cwd)
+    parsed_remote = _remote_url(remote)
+    host = parsed_remote.hostname
+    if host == "github.com":
+        provider, cli = "github", "gh"
+    else:
+        provider, cli = "gitlab", "glab"
+
+    if provider == "github":
+        pr = _publish_command([cli, "pr", "view", "--json", "number"], cwd)
+        number = json.loads(pr).get("number")
+        if not number:
+            raise RowRayError("could not find an open GitHub pull request for the current branch")
+        owner_repo = "/".join(parsed_remote.path.strip("/").removesuffix(".git").split("/")[-2:])
+        endpoint = f"repos/{owner_repo}/issues/{number}/comments"
+        comments = json.loads(_publish_command([cli, "api", "--paginate", "--slurp", endpoint], cwd))
+        matches = [item for page in comments for item in (page if isinstance(page, list) else []) if PUBLISH_MARKER in item.get("body", "")]
+        body = f"{PUBLISH_MARKER}\n\n{report_text}"
+        if matches:
+            _publish_command([cli, "api", f"{endpoint}/{matches[-1]['id']}", "--method", "PATCH", "--field", f"body={body}"], cwd)
+        else:
+            _publish_command([cli, "api", endpoint, "--method", "POST", "--field", f"body={body}"], cwd)
+        return f"Report published to GitHub PR #{number}."
+
+    mr = json.loads(_publish_command([cli, "mr", "view", "--output", "json"], cwd))
+    iid = mr.get("iid")
+    if not iid:
+        raise RowRayError("could not find an open GitLab merge request for the current branch")
+    project_path = parsed_remote.path.strip("/").removesuffix(".git")
+    endpoint = f"projects/{quote(project_path, safe='')}/merge_requests/{iid}/notes"
+    notes = json.loads(_publish_command([cli, "api", "--paginate", "--output", "json", endpoint], cwd))
+    matches = [item for item in notes if PUBLISH_MARKER in item.get("body", "")]
+    body = f"{PUBLISH_MARKER}\n\n{report_text}"
+    if matches:
+        _publish_command([cli, "api", endpoint + f"/{matches[-1]['id']}", "-X", "PUT", "-f", f"body={body}"], cwd)
+    else:
+        _publish_command([cli, "api", endpoint, "-X", "POST", "-f", f"body={body}"], cwd)
+    return f"Report published to GitLab MR !{iid}."
 
 
 def _color(text: str, code: int, enabled: bool) -> str:
