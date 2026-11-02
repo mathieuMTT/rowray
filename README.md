@@ -227,6 +227,14 @@ rowray diff --select my_model --execute --column event_type
 
 `--column` prints actual distinct values. Do not use it on sensitive or very high-cardinality columns unless that terminal output is acceptable.
 
+Publish the completed report to the open pull request or merge request for the current branch:
+
+```bash
+rowray diff --select my_model --publish
+```
+
+RowRay uses the authenticated `gh` CLI for GitHub repositories and `glab` for GitLab repositories. Install and authenticate the matching CLI first. It creates a comment on the first run and updates that comment on later runs. If the report includes `--column` results, those values are included in the published comment too.
+
 ## Complete example
 
 ```bash
@@ -256,6 +264,7 @@ This estimates incremental and full-refresh scan costs for BASE and WORKTREE. It
 - Each executed aggregate query also sets `maximum_bytes_billed` to 200 GiB.
 - `--column` runs an additional aggregate query with its own 200 GiB cap.
 - Raw rows are not downloaded, but `--column` downloads distinct values and their counts.
+- `--publish` sends the report, including any `--column` values, to the associated pull request or merge request.
 - dbt compilation may run warehouse introspection or project macros such as `run_query`; RowRay cannot make arbitrary dbt projects query-free.
 
 The scan/cost table estimates the compiled model SQL for each side. It does not include any warehouse activity triggered by project-specific dbt macros or the potentially billed queries run by `--execute` and `--column`.
