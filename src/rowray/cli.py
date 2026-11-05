@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 from google.api_core.exceptions import GoogleAPICallError
 
-from rowray.compare import RowRayError, compare, publish_report
+from rowray.compare import RowRayError, compare, progress, publish_report
 
 JOB_PERMISSION = re.compile(r"Project ([^:]+): User does not have bigquery\.jobs\.create")
 
@@ -63,7 +63,9 @@ def main() -> int:
         )
         print(output)
         if args.publish:
-            print(publish_report(output))
+            with progress("Publish report"):
+                published = publish_report(output)
+            print(published)
         return 0
     except (OSError, RowRayError, yaml.YAMLError, ValueError) as error:
         print(f"rowray: {error}", file=sys.stderr)

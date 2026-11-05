@@ -233,7 +233,7 @@ Publish the completed report to the open pull request or merge request for the c
 rowray diff --select my_model --publish
 ```
 
-RowRay detects GitHub or GitLab automatically from the `origin` hostname, then uses the authenticated `gh` or `glab` CLI. Install and authenticate the matching CLI first. Unknown hosts are rejected. Each run creates a new comment. If the report includes `--column` results, those values are included in the published comment too.
+RowRay detects GitHub or GitLab automatically from the `origin` hostname, then uses the authenticated `gh` or `glab` CLI. Install and authenticate the matching CLI first. Unknown hosts are rejected. Publication uses the same progress indicator as the comparison steps, and each run creates a new comment. If the report includes `--column` results, those values are included in the published comment too.
 
 ## Complete example
 

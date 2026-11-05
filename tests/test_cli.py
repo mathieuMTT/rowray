@@ -26,10 +26,11 @@ class CliTest(unittest.TestCase):
             patch("sys.argv", ["rowray", "diff", "--select", "orders", "--publish"]),
             patch("rowray.cli.compare", return_value="report"),
             patch("rowray.cli.publish_report", return_value="Report published.") as publish,
+            patch("rowray.compare.time.monotonic", side_effect=[1.0, 2.0]),
             redirect_stdout(output),
         ):
             self.assertEqual(main(), 0)
-        self.assertEqual(output.getvalue(), "report\nReport published.\n")
+        self.assertEqual(output.getvalue(), "report\n→ Publish report...\n✓ Publish report (1.0s)\nReport published.\n")
         publish.assert_called_once_with("report")
 
     def test_does_not_publish_without_flag(self):
